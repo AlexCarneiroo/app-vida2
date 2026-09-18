@@ -9,69 +9,34 @@ import {
   Repeat,
   Sparkles,
 } from 'lucide-react'
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import {
   PageTransition,
   staggerContainer,
   staggerItem,
 } from '../components/ui/PageTransition'
 import { ProgressRing } from '../components/ui/ProgressRing'
+import { useFinancas } from '../hooks/useFinancas'
+import { useHabitos } from '../hooks/useHabitos'
+import { useRotina } from '../hooks/useRotina'
 import { useTreino } from '../hooks/useTreino'
-
-const baseModules = [
-  {
-    to: '/financas',
-    title: 'Finanças',
-    desc: 'Fluxo, metas e clareza',
-    meta: 'Mês',
-    progress: 48,
-    icon: PiggyBank,
-    bar: 'var(--financas)',
-    iconBg: 'rgba(240, 199, 94, 0.16)',
-    iconFg: 'var(--financas)',
-  },
-  {
-    to: '/habitos',
-    title: 'Hábitos',
-    desc: 'Consistência que compõe',
-    meta: '4/6',
-    progress: 78,
-    icon: Sparkles,
-    bar: 'var(--habitos)',
-    iconBg: 'rgba(196, 164, 132, 0.16)',
-    iconFg: 'var(--habitos)',
-  },
-  {
-    to: '/rotina',
-    title: 'Rotina',
-    desc: 'O dia em ritmo certo',
-    meta: '3 blocos',
-    progress: 35,
-    icon: Repeat,
-    bar: 'var(--rotina)',
-    iconBg: 'rgba(126, 184, 255, 0.16)',
-    iconFg: 'var(--rotina)',
-  },
-] as const
-
-const initialHabits = [
-  { id: 1, name: 'Água 2L', detail: 'Manhã · tarde', streak: 12, done: true },
-  { id: 2, name: 'Leitura 20 min', detail: 'Noite', streak: 8, done: true },
-  { id: 3, name: 'Sem redes até 10h', detail: 'Foco', streak: 5, done: false },
-  { id: 4, name: 'Alongamento', detail: 'Pós-treino', streak: 3, done: false },
-]
+import { formatBRL } from '../lib/date'
 
 export function HomePage() {
-  const [habits, setHabits] = useState(initialHabits)
   const {
     todayTemplate,
     isTodayDone,
     state,
     stats,
   } = useTreino()
+  const { habits, doneCount, total: habitsTotal, toggleHabit } = useHabitos()
+  const { doneCount: rotinaDone, total: rotinaTotal } = useRotina()
+  const { stats: financeStats, monthTransactions, state: financeState } =
+    useFinancas()
+  const goals = financeState.goals
 
-  const doneCount = habits.filter((h) => h.done).length
-  const dayProgress = Math.round((doneCount / habits.length) * 100)
+  const dayProgress =
+    habitsTotal > 0 ? Math.round((doneCount / habitsTotal) * 100) : 0
 
   const treinoMeta = isTodayDone
     ? 'Feito'
@@ -79,7 +44,7 @@ export function HomePage() {
       ? `${stats.progress}%`
       : todayTemplate
         ? 'Hoje'
-        : 'Descanso'
+        : '—'
 
   const treinoDesc = state.active
     ? `Em andamento · ${stats.doneSets}/${stats.totalSets} séries`
@@ -88,6 +53,30 @@ export function HomePage() {
       : todayTemplate
         ? todayTemplate.focus
         : 'Sem treino no plano'
+
+  const financasMeta =
+    monthTransactions.length > 0
+      ? formatBRL(financeStats.balance)
+      : goals.length > 0
+        ? `${goals.length} meta${goals.length > 1 ? 's' : ''}`
+        : 'Vazio'
+
+  const financasProgress =
+    goals.length > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (goals.reduce((a, g) => a + g.saved, 0) /
+              Math.max(
+                1,
+                goals.reduce((a, g) => a + g.target, 0),
+              )) *
+              100,
+          ),
+        )
+      : monthTransactions.length > 0
+        ? Math.min(100, Math.round((financeStats.expense > 0 ? 55 : 25)))
+        : 0
 
   const modules = useMemo(
     () => [
@@ -102,16 +91,67 @@ export function HomePage() {
         iconBg: 'rgba(45, 212, 168, 0.16)',
         iconFg: 'var(--treino)',
       },
-      ...baseModules,
+      {
+        to: '/financas',
+        title: 'Finanças',
+        desc:
+          monthTransactions.length > 0
+            ? `Saldo do mês · ${formatBRL(financeStats.balance)}`
+            : 'Fluxo, metas e clareza',
+        meta: financasMeta,
+        progress: financasProgress,
+        icon: PiggyBank,
+        bar: 'var(--financas)',
+        iconBg: 'rgba(240, 199, 94, 0.16)',
+        iconFg: 'var(--financas)',
+      },
+      {
+        to: '/habitos',
+        title: 'Hábitos',
+        desc:
+          habitsTotal > 0
+            ? `${doneCount} de ${habitsTotal} feitos hoje`
+            : 'Consistência que compõe',
+        meta: habitsTotal > 0 ? `${doneCount}/${habitsTotal}` : '—',
+        progress: dayProgress,
+        icon: Sparkles,
+        bar: 'var(--habitos)',
+        iconBg: 'rgba(196, 164, 132, 0.16)',
+        iconFg: 'var(--habitos)',
+      },
+      {
+        to: '/rotina',
+        title: 'Rotina',
+        desc:
+          rotinaTotal > 0
+            ? `${rotinaDone} de ${rotinaTotal} blocos`
+            : 'O dia em ritmo certo',
+        meta: rotinaTotal > 0 ? `${rotinaDone}/${rotinaTotal}` : '—',
+        progress:
+          rotinaTotal > 0
+            ? Math.round((rotinaDone / rotinaTotal) * 100)
+            : 0,
+        icon: Repeat,
+        bar: 'var(--rotina)',
+        iconBg: 'rgba(126, 184, 255, 0.16)',
+        iconFg: 'var(--rotina)',
+      },
     ],
-    [treinoDesc, treinoMeta, stats.homeProgress],
+    [
+      treinoDesc,
+      treinoMeta,
+      stats.homeProgress,
+      monthTransactions.length,
+      financeStats.balance,
+      financasMeta,
+      financasProgress,
+      habitsTotal,
+      doneCount,
+      dayProgress,
+      rotinaTotal,
+      rotinaDone,
+    ],
   )
-
-  function toggleHabit(id: number) {
-    setHabits((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, done: !h.done } : h)),
-    )
-  }
 
   return (
     <PageTransition>
@@ -242,7 +282,7 @@ export function HomePage() {
       <div className="section-label">
         <h2>Hoje</h2>
         <span>
-          {doneCount}/{habits.length} feitos
+          {habitsTotal > 0 ? `${doneCount}/${habitsTotal} feitos` : 'Sem hábitos'}
         </span>
       </div>
 
@@ -263,7 +303,11 @@ export function HomePage() {
                 letterSpacing: '-0.03em',
               }}
             >
-              Ritmo em construção
+              {habitsTotal === 0
+                ? 'Começa pelos hábitos'
+                : doneCount === habitsTotal
+                  ? 'Dia completo'
+                  : 'Ritmo em construção'}
             </strong>
             <p
               style={{
@@ -272,29 +316,46 @@ export function HomePage() {
                 fontSize: '0.9rem',
               }}
             >
-              Marque os hábitos — o anel acompanha em tempo real.
+              {habitsTotal === 0
+                ? 'Cria hábitos na aba Hábitos — o anel acompanha aqui.'
+                : 'Marca os hábitos — o anel acompanha em tempo real.'}
             </p>
           </div>
         </div>
 
         <div className="surface habit-list">
-          {habits.map((habit) => (
-            <button
-              key={habit.id}
-              type="button"
-              className="habit-row"
-              onClick={() => toggleHabit(habit.id)}
-            >
-              <span className={`habit-check${habit.done ? ' is-done' : ''}`}>
-                {habit.done && <Check size={16} strokeWidth={3} />}
-              </span>
+          {habits.length === 0 ? (
+            <Link to="/habitos" className="habit-row home-empty-habits">
               <span className="habit-info">
-                <strong>{habit.name}</strong>
-                <span>{habit.detail}</span>
+                <strong>Nenhum hábito ainda</strong>
+                <span>Toca para adicionar o primeiro</span>
               </span>
-              <span className="streak">{habit.streak}d</span>
-            </button>
-          ))}
+              <ArrowUpRight size={16} />
+            </Link>
+          ) : (
+            habits.slice(0, 6).map((habit) => (
+              <button
+                key={habit.id}
+                type="button"
+                className="habit-row"
+                onClick={() => toggleHabit(habit.id)}
+              >
+                <span
+                  className={`habit-check${habit.doneToday ? ' is-done' : ''}`}
+                >
+                  {habit.doneToday && <Check size={16} strokeWidth={3} />}
+                </span>
+                <span className="habit-info">
+                  <strong>{habit.name}</strong>
+                  <span>
+                    {habit.detail ||
+                      (habit.doneToday ? 'Concluído hoje' : 'Pendente')}
+                  </span>
+                </span>
+                <span className="streak">{habit.streak}d</span>
+              </button>
+            ))
+          )}
         </div>
       </motion.div>
     </PageTransition>

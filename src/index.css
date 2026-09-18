@@ -1019,6 +1019,18 @@ a {
   letter-spacing: -0.04em;
 }
 
+.habit-list a.habit-row,
+.home-empty-habits {
+  text-decoration: none;
+  width: 100%;
+  color: inherit;
+  justify-content: space-between;
+}
+
+.home-empty-habits .habit-info strong {
+  color: var(--ink-muted);
+}
+
 .habit-list {
   padding: 0.65rem;
   display: flex;
