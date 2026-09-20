@@ -646,7 +646,7 @@ export function TreinoPage() {
                       className="btn btn--ghost"
                       onClick={() => setIdleView('presets')}
                     >
-                      <LayoutTemplate size={15} />
+                      <LayoutTemplate size={18} />
                       Planos
                     </button>
                     <button
@@ -654,7 +654,7 @@ export function TreinoPage() {
                       className="btn btn--ghost"
                       onClick={() => setIdleView('progress')}
                     >
-                      <LineChart size={15} />
+                      <LineChart size={18} />
                       Progressão
                     </button>
                     <button
@@ -662,7 +662,7 @@ export function TreinoPage() {
                       className="btn btn--ghost"
                       onClick={openEditor}
                     >
-                      <Pencil size={15} />
+                      <Pencil size={18} />
                       Editar
                     </button>
                   </div>
