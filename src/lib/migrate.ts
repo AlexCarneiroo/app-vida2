@@ -1,4 +1,8 @@
-import { emptyHabitosState, normalizeHabit } from '../data/habitosDefaults'
+import {
+  emptyHabitosState,
+  normalizeHabit,
+  normalizePersonalGoal,
+} from '../data/habitosDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
 import { normalizeExerciseName } from './treinoStats'
 import {
@@ -8,7 +12,7 @@ import {
   type PersistedDoc,
 } from './dataVersion'
 import type { FinancasState, SavingsGoal, Transaction } from '../types/financas'
-import type { Habit, HabitosState } from '../types/habitos'
+import type { Habit, HabitosState, PersonalGoal } from '../types/habitos'
 import type { RotinaState, RoutineBlock } from '../types/rotina'
 import type {
   ActiveWorkout,
@@ -274,6 +278,9 @@ export function normalizeHabitos(raw: unknown): HabitosState {
   const habits = asArray<Habit>(parsed.habits)
     .filter((h) => h && typeof h.id === 'string')
     .map((h) => normalizeHabit(h))
+  const personalGoals = asArray<PersonalGoal>(parsed.personalGoals)
+    .filter((g) => g && typeof g.id === 'string')
+    .map((g) => normalizePersonalGoal(g))
   const base = emptyHabitosState()
   const dayLogRaw =
     parsed.dayLog && typeof parsed.dayLog === 'object' ? parsed.dayLog : {}
@@ -286,6 +293,7 @@ export function normalizeHabitos(raw: unknown): HabitosState {
     dayKey: parsed.dayKey || base.dayKey,
     habits,
     dayLog,
+    personalGoals,
   }
 }
 
@@ -416,12 +424,41 @@ export function mergeHabitosSafe(
     dayLog[k] = Math.max(dayLog[k] ?? 0, v)
   }
 
+  const goalMap = new Map<string, PersonalGoal>()
+  const gPrimary = preferRemote
+    ? remote.personalGoals ?? []
+    : local.personalGoals ?? []
+  const gSecondary = preferRemote
+    ? local.personalGoals ?? []
+    : remote.personalGoals ?? []
+  for (const g of gSecondary) goalMap.set(g.id, g)
+  for (const g of gPrimary) {
+    const prev = goalMap.get(g.id)
+    if (!prev) {
+      goalMap.set(g.id, g)
+      continue
+    }
+    const current = Math.max(prev.current, g.current)
+    const target = Math.max(prev.target, g.target)
+    goalMap.set(g.id, {
+      ...prev,
+      ...g,
+      current,
+      target,
+      completedAt:
+        current >= target
+          ? g.completedAt || prev.completedAt || new Date().toISOString()
+          : null,
+    })
+  }
+
   return {
     dayKey: preferRemote
       ? remote.dayKey || local.dayKey
       : local.dayKey || remote.dayKey,
     habits: [...map.values()],
     dayLog,
+    personalGoals: [...goalMap.values()],
   }
 }
 

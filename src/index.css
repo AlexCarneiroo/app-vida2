@@ -274,6 +274,25 @@ body,
   min-height: 100%;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 body {
   background: var(--bg-deep);
   color: var(--ink);
@@ -283,6 +302,7 @@ body {
     background-color 0.35s var(--ease-out),
     color 0.35s var(--ease-out);
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 button,
@@ -401,6 +421,10 @@ a {
   max-width: 1100px;
   width: 100%;
   margin: 0 auto;
+}
+
+.page-transition {
+  will-change: opacity, transform;
 }
 
 /* —— Pull to refresh (mobile) —— */
@@ -631,21 +655,32 @@ a {
   background: var(--bg-glass);
   border: 1px solid rgba(var(--ink-rgb), 0.08);
   border-radius: var(--radius-lg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@media (max-width: 899px) {
+  .surface {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
 }
 
 .surface--interactive {
   transition:
-    transform 0.35s var(--ease-out),
-    border-color 0.35s var(--ease-out),
-    background 0.35s var(--ease-out);
+    transform 0.22s var(--ease-out),
+    border-color 0.22s var(--ease-out),
+    background 0.22s var(--ease-out);
 }
 
 .surface--interactive:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   border-color: rgba(var(--ink-rgb), 0.16);
   background: var(--bg-glass-strong);
+}
+
+.surface--interactive:active {
+  transform: translateY(0) scale(0.985);
 }
 
 .btn {
@@ -658,13 +693,14 @@ a {
   font-weight: 600;
   font-size: 0.9rem;
   transition:
-    transform 0.25s var(--ease-spring),
-    background 0.25s ease,
-    box-shadow 0.25s ease;
+    transform 0.18s var(--ease-out),
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .btn:active {
-  transform: scale(0.96);
+  transform: scale(0.97);
 }
 
 .btn--primary {
@@ -2156,6 +2192,85 @@ button.activity-map__cell:focus-visible {
 .habit-form__actions .btn--primary {
   flex: 1;
   min-width: 10rem;
+}
+
+.personal-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 1.15rem;
+}
+
+.personal-goal {
+  padding: 0.95rem 1rem;
+}
+
+.personal-goal__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+.personal-goal__icon {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 10px;
+  background: rgba(var(--jade-rgb), 0.14);
+  color: var(--jade);
+  flex-shrink: 0;
+}
+
+.personal-goal__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.personal-goal__info strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.personal-goal__info span,
+.personal-goal__info em {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  font-style: normal;
+  margin-top: 0.15rem;
+}
+
+.personal-goal__info em {
+  color: var(--jade);
+  font-weight: 600;
+}
+
+.personal-goal__pct {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+}
+
+.personal-goal__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.personal-goal__foot em {
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.personal-goal__foot em.is-done {
+  color: var(--jade);
 }
 
 /* —— Placeholder module pages —— */

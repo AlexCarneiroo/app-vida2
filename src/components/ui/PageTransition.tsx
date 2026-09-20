@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import type { ReactNode } from 'react'
 
 const ease = [0.22, 1, 0.36, 1] as const
@@ -8,12 +8,19 @@ type PageTransitionProps = {
 }
 
 export function PageTransition({ children }: PageTransitionProps) {
+  const reduce = useReducedMotion()
+
+  if (reduce) {
+    return <div className="page-transition">{children}</div>
+  }
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
-      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      exit={{ opacity: 0, y: -10, filter: 'blur(4px)' }}
-      transition={{ duration: 0.45, ease }}
+      className="page-transition"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.28, ease }}
     >
       {children}
     </motion.div>
@@ -24,16 +31,15 @@ export const staggerContainer = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.06 },
+    transition: { staggerChildren: 0.045, delayChildren: 0.02 },
   },
 }
 
 export const staggerItem = {
-  hidden: { opacity: 0, y: 16, scale: 0.98 },
+  hidden: { opacity: 0, y: 10 },
   show: {
     opacity: 1,
     y: 0,
-    scale: 1,
-    transition: { duration: 0.45, ease },
+    transition: { duration: 0.3, ease },
   },
 }

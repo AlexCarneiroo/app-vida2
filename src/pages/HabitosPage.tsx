@@ -7,14 +7,18 @@ import {
   Plus,
   Shield,
   Sparkles,
+  Target,
   Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
+  formatGoalProgress,
   HABIT_CATEGORY_LABELS,
   HABIT_FREQUENCY_LABELS,
   HABIT_FREEZES_PER_WEEK,
   HABIT_QUICK_IDEAS,
+  PERSONAL_GOAL_IDEAS,
+  PERSONAL_GOAL_UNITS,
   suggestCategory,
 } from '../data/habitosDefaults'
 import { DAY_LABELS } from '../data/treinoDefaults'
@@ -35,6 +39,7 @@ import type {
   HabitCategory,
   HabitFrequency,
   HabitInput,
+  PersonalGoal,
 } from '../types/habitos'
 
 const CATEGORIES = Object.keys(HABIT_CATEGORY_LABELS) as HabitCategory[]
@@ -45,6 +50,7 @@ const emptyForm = (): HabitInput & {
   preferredTime: string
   reminderTime: string
   goalBoostAmount: number
+  personalBoost: number
 } => ({
   name: '',
   detail: '',
@@ -56,23 +62,31 @@ const emptyForm = (): HabitInput & {
   preferredTime: '',
   reminderEnabled: false,
   reminderTime: '09:00',
+  linkedPersonalGoalId: null,
+  personalBoost: 0,
   linkedGoalId: null,
   goalBoostAmount: 0,
 })
 
-function habitMetaLine(h: Habit, linkedGoalName?: string | null) {
+function habitMetaLine(
+  h: Habit,
+  personalGoalName?: string | null,
+  financeGoalName?: string | null,
+) {
   const bits: string[] = [HABIT_CATEGORY_LABELS[h.category]]
   bits.push(HABIT_FREQUENCY_LABELS[h.frequency])
   if (h.goalKind === 'count') bits.push(`meta ${h.goalTarget}/dia`)
   if (h.preferredTime) bits.push(h.preferredTime)
   if (h.reminderEnabled && h.reminderTime) bits.push(`🔔 ${h.reminderTime}`)
-  if (linkedGoalName) bits.push(`🎯 ${linkedGoalName}`)
+  if (personalGoalName) bits.push(`🎯 ${personalGoalName}`)
+  if (financeGoalName) bits.push(`💰 ${financeGoalName}`)
   return bits.join(' · ')
 }
 
 export function HabitosPage() {
   const {
     habits,
+    personalGoals,
     dueToday,
     doneCount,
     coveredCount,
@@ -86,10 +100,18 @@ export function HabitosPage() {
     addHabit,
     updateHabit,
     removeHabit,
+    addPersonalGoal,
+    removePersonalGoal,
+    bumpPersonalGoal,
   } = useHabitos()
   const { state: financeState, updateGoalSaved } = useFinancas()
   const savingsGoals = financeState.goals
-  const goalNameById = useMemo(() => {
+  const personalGoalNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const g of personalGoals) map.set(g.id, g.name)
+    return map
+  }, [personalGoals])
+  const financeGoalNameById = useMemo(() => {
     const map = new Map<string, string>()
     for (const g of savingsGoals) map.set(g.id, g.name)
     return map
@@ -97,11 +119,22 @@ export function HabitosPage() {
   const { toast } = useToast()
   const { confirm } = useConfirm()
   const { busy: saving, run: runSave } = useBusyAction()
+  const { busy: savingGoal, run: runSaveGoal } = useBusyAction()
   const [removingId, setRemovingId] = useState<string | null>(null)
+  const [removingGoalId, setRemovingGoalId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [showGoalForm, setShowGoalForm] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [categoryLocked, setCategoryLocked] = useState(false)
+  const [goalForm, setGoalForm] = useState({
+    name: '',
+    detail: '',
+    category: 'saude' as HabitCategory,
+    target: '60',
+    unit: 'L',
+    defaultBoost: '2',
+  })
 
   const freezesLeft = useMemo(() => {
     if (habits.length === 0) return HABIT_FREEZES_PER_WEEK
@@ -172,6 +205,8 @@ export function HabitosPage() {
       preferredTime: h.preferredTime || '',
       reminderEnabled: h.reminderEnabled,
       reminderTime: h.reminderTime || h.preferredTime || '09:00',
+      linkedPersonalGoalId: h.linkedPersonalGoalId,
+      personalBoost: h.personalBoost || 0,
       linkedGoalId: h.linkedGoalId,
       goalBoostAmount: h.goalBoostAmount || 0,
     })
@@ -214,6 +249,10 @@ export function HabitosPage() {
       reminderTime: form.reminderEnabled
         ? form.reminderTime || form.preferredTime || '09:00'
         : null,
+      linkedPersonalGoalId: form.linkedPersonalGoalId || null,
+      personalBoost: form.linkedPersonalGoalId
+        ? Math.max(0, Number(form.personalBoost) || 0)
+        : 0,
       linkedGoalId: form.linkedGoalId || null,
       goalBoostAmount: form.linkedGoalId
         ? Math.max(0, Number(form.goalBoostAmount) || 0)
@@ -259,6 +298,20 @@ export function HabitosPage() {
   }
 
   function boostLinkedGoal(h: Habit) {
+    if (h.linkedPersonalGoalId) {
+      const pGoal = personalGoals.find((g) => g.id === h.linkedPersonalGoalId)
+      if (pGoal) {
+        const amount =
+          h.personalBoost > 0 ? h.personalBoost : pGoal.defaultBoost
+        if (amount > 0) {
+          bumpPersonalGoal(pGoal.id, amount)
+          toast(
+            `+${amount} ${pGoal.unit} em “${pGoal.name}”`,
+            'ok',
+          )
+        }
+      }
+    }
     if (!h.linkedGoalId || !(h.goalBoostAmount > 0)) return
     const goal = savingsGoals.find((g) => g.id === h.linkedGoalId)
     if (!goal) return
@@ -288,6 +341,64 @@ export function HabitosPage() {
     }
   }
 
+  async function handleRemoveGoal(goal: PersonalGoal) {
+    const ok = await confirm({
+      title: 'Excluir meta pessoal?',
+      message: `“${goal.name}” será removida. Os hábitos deixam de estar ligados a ela.`,
+      confirmLabel: 'Excluir',
+    })
+    if (!ok) return
+    setRemovingGoalId(goal.id)
+    try {
+      removePersonalGoal(goal.id)
+      toast('Meta removida', 'info')
+    } finally {
+      setRemovingGoalId(null)
+    }
+  }
+
+  function handleAddPersonalGoal(e: FormEvent) {
+    e.preventDefault()
+    if (!goalForm.name.trim()) return
+    const target = Number(String(goalForm.target).replace(',', '.')) || 0
+    if (!(target > 0)) {
+      toast('Define um alvo válido', 'warn')
+      return
+    }
+    void runSaveGoal(() => {
+      addPersonalGoal({
+        name: goalForm.name,
+        detail: goalForm.detail,
+        category: goalForm.category,
+        target,
+        unit: goalForm.unit,
+        defaultBoost: Number(String(goalForm.defaultBoost).replace(',', '.')) || 1,
+      })
+      setGoalForm({
+        name: '',
+        detail: '',
+        category: 'saude',
+        target: '60',
+        unit: 'L',
+        defaultBoost: '2',
+      })
+      setShowGoalForm(false)
+      toast('Meta pessoal criada', 'ok')
+    })
+  }
+
+  function applyGoalIdea(idea: (typeof PERSONAL_GOAL_IDEAS)[number]) {
+    setGoalForm({
+      name: idea.name,
+      detail: idea.detail,
+      category: idea.category,
+      target: String(idea.target),
+      unit: idea.unit,
+      defaultBoost: String(idea.defaultBoost),
+    })
+    setShowGoalForm(true)
+  }
+
   const restingToday = habits.filter(
     (h) => !dueToday.some((d) => d.id === h.id),
   )
@@ -299,8 +410,8 @@ export function HabitosPage() {
           <p className="page-kicker">Consistência</p>
           <h1 className="page-title">Hábitos</h1>
           <p className="page-sub">
-            Define meta, ritmo e lembrete. Nos dias difíceis, protege a
-            sequência em vez de a partir.
+            Metas pessoais (água, leitura…), hábitos do dia e, nos dias difíceis,
+            proteção de sequência.
           </p>
         </div>
         <Button
@@ -333,7 +444,198 @@ export function HabitosPage() {
         </div>
       </div>
 
-      <div className="habit-ideas" aria-label="Ideias rápidas">
+      <div className="section-label">
+        <h2>Metas pessoais</h2>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={() => setShowGoalForm((v) => !v)}
+        >
+          <Plus size={14} />
+          {showGoalForm ? 'Fechar' : 'Nova meta'}
+        </button>
+      </div>
+
+      <div className="habit-ideas" aria-label="Ideias de metas">
+        {PERSONAL_GOAL_IDEAS.map((idea) => (
+          <button
+            key={idea.name}
+            type="button"
+            className="habit-idea"
+            onClick={() => applyGoalIdea(idea)}
+          >
+            {idea.name}
+          </button>
+        ))}
+      </div>
+
+      {showGoalForm && (
+        <form className="surface habit-form" onSubmit={handleAddPersonalGoal}>
+          <p className="habit-form__lead">
+            Metas como “beber 2 L de água” acumulam progresso quando conclus
+            o hábito ligado.
+          </p>
+          <label className="plan-field">
+            <span>Nome da meta</span>
+            <input
+              type="text"
+              value={goalForm.name}
+              onChange={(e) =>
+                setGoalForm((f) => ({ ...f, name: e.target.value }))
+              }
+              placeholder="Ex.: Beber 2 L de água"
+              required
+              disabled={savingGoal}
+            />
+          </label>
+          <label className="plan-field">
+            <span>Nota (opcional)</span>
+            <input
+              type="text"
+              value={goalForm.detail}
+              onChange={(e) =>
+                setGoalForm((f) => ({ ...f, detail: e.target.value }))
+              }
+              placeholder="Porquê importa"
+              disabled={savingGoal}
+            />
+          </label>
+          <div className="habit-form__row">
+            <label className="plan-field">
+              <span>Alvo total</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={goalForm.target}
+                onChange={(e) =>
+                  setGoalForm((f) => ({ ...f, target: e.target.value }))
+                }
+                required
+                disabled={savingGoal}
+              />
+            </label>
+            <label className="plan-field">
+              <span>Unidade</span>
+              <select
+                value={goalForm.unit}
+                onChange={(e) =>
+                  setGoalForm((f) => ({ ...f, unit: e.target.value }))
+                }
+                disabled={savingGoal}
+              >
+                {PERSONAL_GOAL_UNITS.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+                {!PERSONAL_GOAL_UNITS.includes(
+                  goalForm.unit as (typeof PERSONAL_GOAL_UNITS)[number],
+                ) && (
+                  <option value={goalForm.unit}>{goalForm.unit}</option>
+                )}
+              </select>
+            </label>
+            <label className="plan-field">
+              <span>Por cada dia feito</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={goalForm.defaultBoost}
+                onChange={(e) =>
+                  setGoalForm((f) => ({ ...f, defaultBoost: e.target.value }))
+                }
+                placeholder="Ex.: 2"
+                disabled={savingGoal}
+              />
+            </label>
+          </div>
+          <div className="habit-chips">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`habit-chip${goalForm.category === c ? ' is-active' : ''}`}
+                onClick={() => setGoalForm((f) => ({ ...f, category: c }))}
+              >
+                {HABIT_CATEGORY_LABELS[c]}
+              </button>
+            ))}
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            icon={<Target size={16} />}
+            loading={savingGoal}
+            loadingLabel="A guardar…"
+          >
+            Guardar meta
+          </Button>
+        </form>
+      )}
+
+      {personalGoals.length > 0 && (
+        <div className="personal-goals">
+          {personalGoals.map((goal) => {
+            const { pct, label } = formatGoalProgress(goal)
+            const linked = habits.filter(
+              (h) => h.linkedPersonalGoalId === goal.id,
+            )
+            return (
+              <article key={goal.id} className="surface personal-goal">
+                <div className="personal-goal__head">
+                  <span className="personal-goal__icon" aria-hidden>
+                    <Target size={16} />
+                  </span>
+                  <div className="personal-goal__info">
+                    <strong>{goal.name}</strong>
+                    <span>
+                      {HABIT_CATEGORY_LABELS[goal.category]}
+                      {goal.detail ? ` · ${goal.detail}` : ''}
+                    </span>
+                    {linked.length > 0 && (
+                      <em>
+                        Hábito
+                        {linked.length > 1 ? 's' : ''}:{' '}
+                        {linked.map((h) => h.name).join(' · ')}
+                      </em>
+                    )}
+                  </div>
+                  <span className="personal-goal__pct">{pct}%</span>
+                  <Button
+                    variant="ghost"
+                    className="finance-row__del"
+                    icon={<Trash2 size={14} />}
+                    loading={removingGoalId === goal.id}
+                    onClick={() => handleRemoveGoal(goal)}
+                    aria-label={`Excluir ${goal.name}`}
+                  />
+                </div>
+                <div
+                  className="finance-meter"
+                  role="progressbar"
+                  aria-valuenow={pct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <span style={{ width: `${pct}%` }} />
+                </div>
+                <div className="personal-goal__foot">
+                  <span>{label}</span>
+                  {goal.completedAt ? (
+                    <em className="is-done">Concluída</em>
+                  ) : (
+                    <em>
+                      +{goal.defaultBoost} {goal.unit}/conclusão
+                    </em>
+                  )}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="habit-ideas" aria-label="Ideias rápidas de hábitos">
         {HABIT_QUICK_IDEAS.map((idea) => (
           <button
             key={idea.name}
@@ -524,10 +826,67 @@ export function HabitosPage() {
           </div>
 
           <fieldset className="habit-form__group">
+            <legend>Meta pessoal</legend>
+            <p className="habit-form__hint">
+              Liga a uma meta como “beber 2 L”. Ao concluir o dia, o progresso
+              sobe automaticamente.
+            </p>
+            <label className="plan-field">
+              <span>Associar a</span>
+              <select
+                value={form.linkedPersonalGoalId || ''}
+                onChange={(e) => {
+                  const id = e.target.value || null
+                  const g = personalGoals.find((x) => x.id === id)
+                  patchForm({
+                    linkedPersonalGoalId: id,
+                    personalBoost: id ? form.personalBoost || g?.defaultBoost || 0 : 0,
+                  })
+                }}
+                disabled={saving}
+              >
+                <option value="">Nenhuma</option>
+                {personalGoals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} ({g.current}/{g.target} {g.unit})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {personalGoals.length === 0 && (
+              <p className="habit-form__hint">
+                Cria primeiro uma meta pessoal acima.
+              </p>
+            )}
+            {form.linkedPersonalGoalId && (
+              <label className="plan-field">
+                <span>Quanto somar por conclusão (0 = usa o padrão da meta)</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={
+                    form.personalBoost
+                      ? String(form.personalBoost).replace('.', ',')
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const n = Number(
+                      e.target.value.replace(',', '.').replace(/[^\d.]/g, ''),
+                    )
+                    patchForm({
+                      personalBoost: Number.isFinite(n) ? n : 0,
+                    })
+                  }}
+                  disabled={saving}
+                />
+              </label>
+            )}
+          </fieldset>
+
+          <fieldset className="habit-form__group">
             <legend>Meta de poupança (Finanças)</legend>
             <p className="habit-form__hint">
-              Liga este hábito a uma meta. Opcionalmente, ao concluir o dia,
-              soma um valor automático à meta.
+              Opcional — se quiseres ligar também a dinheiro.
             </p>
             <label className="plan-field">
               <span>Associar a</span>
@@ -551,14 +910,9 @@ export function HabitosPage() {
                 ))}
               </select>
             </label>
-            {savingsGoals.length === 0 && (
-              <p className="habit-form__hint">
-                Ainda não tens metas — cria uma em Finanças.
-              </p>
-            )}
             {form.linkedGoalId && (
               <label className="plan-field">
-                <span>Ao concluir, somar à meta (opcional)</span>
+                <span>Ao concluir, somar à meta (R$)</span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -611,8 +965,6 @@ export function HabitosPage() {
         </form>
       )}
 
-      <ActivityHeatmap log={dayLog} title="Hábitos no ano" />
-
       <div className="section-label">
         <h2>Hoje</h2>
         <span>
@@ -641,7 +993,12 @@ export function HabitosPage() {
               key={h.id}
               habit={h}
               linkedGoalName={
-                h.linkedGoalId ? goalNameById.get(h.linkedGoalId) : null
+                h.linkedPersonalGoalId
+                  ? personalGoalNameById.get(h.linkedPersonalGoalId)
+                  : null
+              }
+              financeGoalName={
+                h.linkedGoalId ? financeGoalNameById.get(h.linkedGoalId) : null
               }
               removing={removingId === h.id}
               onToggle={() => completeHabitAction(h)}
@@ -678,8 +1035,11 @@ export function HabitosPage() {
                   <span>
                     {habitMetaLine(
                       h,
+                      h.linkedPersonalGoalId
+                        ? personalGoalNameById.get(h.linkedPersonalGoalId)
+                        : null,
                       h.linkedGoalId
-                        ? goalNameById.get(h.linkedGoalId)
+                        ? financeGoalNameById.get(h.linkedGoalId)
                         : null,
                     )}
                   </span>
@@ -710,6 +1070,8 @@ export function HabitosPage() {
           </div>
         </>
       )}
+
+      <ActivityHeatmap log={dayLog} title="Hábitos no ano" />
     </PageTransition>
   )
 }
@@ -717,6 +1079,7 @@ export function HabitosPage() {
 function HabitRow({
   habit: h,
   linkedGoalName,
+  financeGoalName,
   removing,
   onToggle,
   onBump,
@@ -726,6 +1089,7 @@ function HabitRow({
 }: {
   habit: Habit
   linkedGoalName?: string | null
+  financeGoalName?: string | null
   removing: boolean
   onToggle: () => void
   onBump: (delta: number) => void
@@ -764,7 +1128,7 @@ function HabitRow({
       <span className="habit-info">
         <strong>{h.name}</strong>
         <span>
-          {habitMetaLine(h, linkedGoalName)}
+          {habitMetaLine(h, linkedGoalName, financeGoalName)}
           {' · '}
           {status}
         </span>

@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   createHabit,
+  createPersonalGoal,
   emptyHabitosState,
   isHabitDueOn,
   renewFreezes,
 } from '../data/habitosDefaults'
 import { dateKey } from '../lib/date'
 import { loadHabitosPersisted } from '../lib/persist'
-import type { Habit, HabitInput, HabitosState } from '../types/habitos'
+import type {
+  Habit,
+  HabitInput,
+  HabitosState,
+  PersonalGoalInput,
+} from '../types/habitos'
 import { useCloudSyncedState } from './useCloudSyncedState'
 
 const STORAGE_KEY = 'vida.habitos.v1'
@@ -16,7 +22,8 @@ function loadDoc() {
   return loadHabitosPersisted(STORAGE_KEY, emptyHabitosState())
 }
 
-const isEmpty = (d: HabitosState) => d.habits.length === 0
+const isEmpty = (d: HabitosState) =>
+  d.habits.length === 0 && (d.personalGoals?.length ?? 0) === 0
 
 function withDayLog(
   prev: HabitosState,
@@ -292,6 +299,14 @@ export function useHabitos() {
               patch.goalBoostAmount !== undefined
                 ? Math.max(0, Number(patch.goalBoostAmount) || 0)
                 : h.goalBoostAmount,
+            linkedPersonalGoalId:
+              patch.linkedPersonalGoalId !== undefined
+                ? patch.linkedPersonalGoalId?.trim() || null
+                : h.linkedPersonalGoalId,
+            personalBoost:
+              patch.personalBoost !== undefined
+                ? Math.max(0, Number(patch.personalBoost) || 0)
+                : h.personalBoost,
             progressToday: Math.min(h.progressToday, goalTarget),
             doneToday:
               goalKind === 'count'
@@ -324,8 +339,101 @@ export function useHabitos() {
     [updateHabit],
   )
 
+  const addPersonalGoal = useCallback(
+    (input: PersonalGoalInput) => {
+      const goal = createPersonalGoal(input)
+      update((prev) => ({
+        ...prev,
+        personalGoals: [goal, ...(prev.personalGoals ?? [])],
+      }))
+      return goal.id
+    },
+    [update],
+  )
+
+  const updatePersonalGoal = useCallback(
+    (id: string, patch: Partial<PersonalGoalInput> & { current?: number }) => {
+      update((prev) => ({
+        ...prev,
+        personalGoals: (prev.personalGoals ?? []).map((g) => {
+          if (g.id !== id) return g
+          const target = Math.max(
+            0.1,
+            Number(patch.target ?? g.target) || g.target,
+          )
+          const current = Math.max(
+            0,
+            Number(patch.current !== undefined ? patch.current : g.current),
+          )
+          return {
+            ...g,
+            name:
+              patch.name !== undefined ? patch.name.trim() || g.name : g.name,
+            detail:
+              patch.detail !== undefined ? patch.detail.trim() : g.detail,
+            category: patch.category ?? g.category,
+            target,
+            unit:
+              patch.unit !== undefined
+                ? patch.unit.trim() || g.unit
+                : g.unit,
+            defaultBoost:
+              patch.defaultBoost !== undefined
+                ? Math.max(0, Number(patch.defaultBoost) || 0)
+                : g.defaultBoost,
+            current,
+            completedAt:
+              current >= target
+                ? g.completedAt || new Date().toISOString()
+                : null,
+          }
+        }),
+      }))
+    },
+    [update],
+  )
+
+  const removePersonalGoal = useCallback(
+    (id: string) => {
+      update((prev) => ({
+        ...prev,
+        personalGoals: (prev.personalGoals ?? []).filter((g) => g.id !== id),
+        habits: prev.habits.map((h) =>
+          h.linkedPersonalGoalId === id
+            ? { ...h, linkedPersonalGoalId: null, personalBoost: 0 }
+            : h,
+        ),
+      }))
+    },
+    [update],
+  )
+
+  /** Soma progresso numa meta pessoal (ex.: ao concluir hábito ligado). */
+  const bumpPersonalGoal = useCallback(
+    (id: string, amount: number) => {
+      if (!(amount > 0)) return
+      update((prev) => ({
+        ...prev,
+        personalGoals: (prev.personalGoals ?? []).map((g) => {
+          if (g.id !== id) return g
+          const current = Math.min(g.target * 2, g.current + amount)
+          return {
+            ...g,
+            current,
+            completedAt:
+              current >= g.target
+                ? g.completedAt || new Date().toISOString()
+                : null,
+          }
+        }),
+      }))
+    },
+    [update],
+  )
+
   return {
     habits,
+    personalGoals: state.personalGoals ?? [],
     dueToday,
     doneCount,
     coveredCount,
@@ -340,6 +448,10 @@ export function useHabitos() {
     updateHabit,
     removeHabit,
     renameHabit,
+    addPersonalGoal,
+    updatePersonalGoal,
+    removePersonalGoal,
+    bumpPersonalGoal,
     isDueToday: (h: Habit) => isHabitDueOn(h, today),
   }
 }

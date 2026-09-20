@@ -6,6 +6,8 @@ import type {
   HabitGoalKind,
   HabitInput,
   HabitosState,
+  PersonalGoal,
+  PersonalGoalInput,
 } from '../types/habitos'
 
 export const HABIT_CATEGORY_LABELS: Record<HabitCategory, string> = {
@@ -26,6 +28,59 @@ export const HABIT_FREQUENCY_LABELS: Record<HabitFrequency, string> = {
 }
 
 export const HABIT_FREEZES_PER_WEEK = 2
+
+export const PERSONAL_GOAL_UNITS = [
+  'L',
+  'ml',
+  'min',
+  'páginas',
+  'km',
+  'vezes',
+  'dias',
+  'kg',
+] as const
+
+export const PERSONAL_GOAL_IDEAS: Array<{
+  name: string
+  detail: string
+  category: HabitCategory
+  target: number
+  unit: string
+  defaultBoost: number
+}> = [
+  {
+    name: 'Beber 2 L de água',
+    detail: 'Hidratação diária acumulada',
+    category: 'saude',
+    target: 60,
+    unit: 'L',
+    defaultBoost: 2,
+  },
+  {
+    name: 'Ler 12 livros',
+    detail: 'Um por mês',
+    category: 'mente',
+    target: 12,
+    unit: 'livros',
+    defaultBoost: 1,
+  },
+  {
+    name: 'Meditar 600 min',
+    detail: 'Cerca de 20 min × 30 dias',
+    category: 'mente',
+    target: 600,
+    unit: 'min',
+    defaultBoost: 10,
+  },
+  {
+    name: 'Caminhar 100 km',
+    detail: 'Passo a passo',
+    category: 'corpo',
+    target: 100,
+    unit: 'km',
+    defaultBoost: 3,
+  },
+]
 
 export const HABIT_QUICK_IDEAS: Array<{
   name: string
@@ -76,8 +131,10 @@ export function suggestCategory(name: string): HabitCategory {
   const t = name.toLowerCase()
   if (/água|agua|sono|dorm|vitamina|remédio|remedio|saúde|saude/.test(t))
     return 'saude'
-  if (/medit|ler|jornal|diário|diario|gratid|respir|mind/.test(t)) return 'mente'
-  if (/caminh|corr|treino|along|flex|muscul|yoga|exerc/.test(t)) return 'corpo'
+  if (/medit|ler|jornal|diário|diario|gratid|respir|mind|livro/.test(t))
+    return 'mente'
+  if (/caminh|corr|treino|along|flex|muscul|yoga|exerc|km/.test(t))
+    return 'corpo'
   if (/estud|trabalh|foco|ler email|inbox|escrev|código|codigo/.test(t))
     return 'produtividade'
   if (/ligar|família|familia|amigo|social|mensagem/.test(t)) return 'social'
@@ -107,6 +164,47 @@ export function isHabitDueOn(habit: Habit, key: string): boolean {
   }
 }
 
+export function createPersonalGoal(input: PersonalGoalInput): PersonalGoal {
+  const target = Math.max(0.1, Number(input.target) || 1)
+  const defaultBoost = Math.max(
+    0,
+    Number(input.defaultBoost) || Math.min(target, 1),
+  )
+  return {
+    id: uid('pgoal'),
+    name: input.name.trim() || 'Nova meta',
+    detail: (input.detail ?? '').trim(),
+    category: input.category ?? suggestCategory(input.name),
+    target,
+    unit: (input.unit ?? 'vezes').trim() || 'vezes',
+    current: 0,
+    defaultBoost,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  }
+}
+
+export function normalizePersonalGoal(
+  raw: Partial<PersonalGoal> & { id: string },
+): PersonalGoal {
+  const target = Math.max(0.1, Number(raw.target) || 1)
+  const current = Math.max(0, Number(raw.current) || 0)
+  return {
+    id: raw.id,
+    name: raw.name?.trim() || 'Meta',
+    detail: raw.detail ?? '',
+    category: (raw.category as HabitCategory) || 'outro',
+    target,
+    unit: (raw.unit ?? 'vezes').trim() || 'vezes',
+    current,
+    defaultBoost: Math.max(0, Number(raw.defaultBoost) || 1),
+    createdAt: raw.createdAt || new Date().toISOString(),
+    completedAt:
+      raw.completedAt ||
+      (current >= target ? new Date().toISOString() : null),
+  }
+}
+
 export function createHabit(input: HabitInput | string, detail = ''): Habit {
   const data: HabitInput =
     typeof input === 'string' ? { name: input, detail } : input
@@ -129,10 +227,11 @@ export function createHabit(input: HabitInput | string, detail = ''): Habit {
     progressToday: 0,
     preferredTime: data.preferredTime?.trim() || null,
     reminderEnabled: Boolean(data.reminderEnabled),
-    reminderTime:
-      data.reminderEnabled
-        ? data.reminderTime?.trim() || data.preferredTime?.trim() || '09:00'
-        : data.reminderTime?.trim() || null,
+    reminderTime: data.reminderEnabled
+      ? data.reminderTime?.trim() || data.preferredTime?.trim() || '09:00'
+      : data.reminderTime?.trim() || null,
+    linkedPersonalGoalId: data.linkedPersonalGoalId?.trim() || null,
+    personalBoost: Math.max(0, Number(data.personalBoost) || 0),
     linkedGoalId: data.linkedGoalId?.trim() || null,
     goalBoostAmount: Math.max(0, Number(data.goalBoostAmount) || 0),
     streak: 0,
@@ -157,7 +256,10 @@ export function normalizeHabit(raw: Partial<Habit> & { id: string }): Habit {
       : 1
   const progressToday = Math.max(
     0,
-    Math.min(goalTarget, Number(raw.progressToday) || (raw.doneToday ? goalTarget : 0)),
+    Math.min(
+      goalTarget,
+      Number(raw.progressToday) || (raw.doneToday ? goalTarget : 0),
+    ),
   )
   return {
     ...base,
@@ -175,6 +277,12 @@ export function normalizeHabit(raw: Partial<Habit> & { id: string }): Habit {
     preferredTime: raw.preferredTime ?? null,
     reminderEnabled: Boolean(raw.reminderEnabled),
     reminderTime: raw.reminderTime ?? null,
+    linkedPersonalGoalId:
+      typeof raw.linkedPersonalGoalId === 'string' &&
+      raw.linkedPersonalGoalId.trim()
+        ? raw.linkedPersonalGoalId.trim()
+        : null,
+    personalBoost: Math.max(0, Number(raw.personalBoost) || 0),
     linkedGoalId:
       typeof raw.linkedGoalId === 'string' && raw.linkedGoalId.trim()
         ? raw.linkedGoalId.trim()
@@ -204,6 +312,7 @@ export const emptyHabitosState = (): HabitosState => ({
   dayKey: dateKey(),
   habits: [],
   dayLog: {},
+  personalGoals: [],
 })
 
 export function renewFreezes(habit: Habit, today = new Date()): Habit {
@@ -214,4 +323,12 @@ export function renewFreezes(habit: Habit, today = new Date()): Habit {
     freezesWeekKey: wk,
     freezesLeft: HABIT_FREEZES_PER_WEEK,
   }
+}
+
+export function formatGoalProgress(goal: PersonalGoal) {
+  const pct = Math.min(
+    100,
+    Math.round((goal.current / Math.max(0.1, goal.target)) * 100),
+  )
+  return { pct, label: `${goal.current}/${goal.target} ${goal.unit}` }
 }

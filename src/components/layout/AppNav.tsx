@@ -53,7 +53,7 @@ export function AppNav({ variant }: AppNavProps) {
                 <motion.span
                   layoutId={`nav-pill-${variant}`}
                   className="nav-item__pill"
-                  transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  transition={{ type: 'spring', stiffness: 520, damping: 36, mass: 0.6 }}
                 />
               )}
               <span className="nav-item__icon">
