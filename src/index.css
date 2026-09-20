@@ -602,7 +602,7 @@ a {
 .nav-item__label {
   position: relative;
   z-index: 1;
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -1986,9 +1986,9 @@ button.activity-map__cell:focus-visible {
 }
 
 .habit-check {
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
   border: 1.5px solid rgba(var(--ink-rgb), 0.2);
   display: grid;
   place-items: center;
@@ -3266,6 +3266,7 @@ button.activity-map__cell:focus-visible {
   .app-main {
     padding-left: calc(1rem + var(--safe-left));
     padding-right: calc(1rem + var(--safe-right));
+    overflow-x: clip;
   }
 
   .page-header {
@@ -3302,8 +3303,427 @@ button.activity-map__cell:focus-visible {
     margin: 1.4rem 0 0.7rem;
   }
 
+  .nav-item__label {
+    font-size: 0.72rem;
+  }
+
+  .nav-item__icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .page-header .btn,
+  .home-hero__actions .btn,
+  .finance-header-actions .btn,
+  .day-detail__cta .btn,
+  .app-confirm__actions .btn,
+  .app-update-banner .btn {
+    min-height: 48px;
+    font-size: 0.95rem;
+  }
+
   .section-label h2 {
     font-size: 1.35rem;
+  }
+
+  /* —— Home —— */
+  .home-hero__top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .home-hero__meter {
+    align-self: center;
+  }
+
+  .home-hero__greet {
+    font-size: clamp(1.55rem, 7vw, 1.9rem);
+  }
+
+  .home-hero__date {
+    font-size: 0.92rem;
+  }
+
+  .home-hero__chip {
+    font-size: 0.78rem;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .home-hero__line {
+    font-size: 1rem;
+    max-width: none;
+  }
+
+  .home-hero__actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .home-hero__actions .btn {
+    width: 100%;
+  }
+
+  .home-hero__starts {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+
+  .home-start {
+    padding: 0.9rem 0.85rem;
+    min-height: 3.4rem;
+  }
+
+  .home-start strong {
+    font-size: 0.98rem;
+  }
+
+  .home-start em {
+    font-size: 0.82rem;
+    white-space: normal;
+  }
+
+  .home-treino-card__body strong {
+    font-size: 1.12rem;
+  }
+
+  .home-treino-card__body span {
+    font-size: 0.9rem;
+  }
+
+  .ring-panel {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.9rem;
+    padding: 1.2rem 1rem;
+  }
+
+  .ring-wrap {
+    width: 120px;
+    height: 120px;
+  }
+
+  /* —— Hábitos —— */
+  .habit-row {
+    gap: 0.65rem;
+    padding: 0.9rem 0.85rem;
+  }
+
+  .habit-check {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .habit-info strong {
+    font-size: 1.02rem;
+  }
+
+  .habit-info span {
+    font-size: 0.85rem;
+  }
+
+  .habit-best {
+    font-size: 0.8rem;
+  }
+
+  .streak {
+    font-size: 0.95rem;
+  }
+
+  .habit-count {
+    font-size: 0.9rem;
+  }
+
+  .habit-count .btn {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  .habit-skip {
+    min-height: 2.5rem;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.82rem;
+  }
+
+  .habit-idea,
+  .habit-chip {
+    min-height: 2.4rem;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.88rem;
+  }
+
+  /* —— Rotina —— */
+  .timeline-item {
+    grid-template-columns: 44px 1fr auto;
+    gap: 0.3rem 0.75rem;
+    padding: 0.95rem 0.9rem;
+    align-items: center;
+  }
+
+  .timeline-item > .habit-check {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .timeline-item > time {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 0.9rem;
+  }
+
+  .timeline-item > div {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .timeline-item strong {
+    font-size: 1.05rem;
+  }
+
+  .timeline-item span {
+    font-size: 0.9rem;
+  }
+
+  .timeline-item > .btn,
+  .timeline-item > .finance-row__del {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* —— Finanças —— */
+  .finance-header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .finance-header-actions .btn,
+  .finance-header-actions .import-bank-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .finance-row {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'icon info del'
+      'icon amount del';
+    gap: 0.25rem 0.7rem;
+    padding: 0.95rem 0.9rem;
+    align-items: start;
+  }
+
+  .finance-row__icon {
+    grid-area: icon;
+    align-self: center;
+    width: 40px;
+    height: 40px;
+  }
+
+  .finance-row__info {
+    grid-area: info;
+    min-width: 0;
+  }
+
+  .finance-row__info strong {
+    font-size: 1.02rem;
+  }
+
+  .finance-row__info span {
+    font-size: 0.85rem;
+  }
+
+  .finance-row em {
+    grid-area: amount;
+    font-size: 1.02rem;
+    justify-self: start;
+  }
+
+  .finance-row__del {
+    grid-area: del;
+    align-self: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.55rem;
+  }
+
+  .finance-goal__head {
+    grid-template-columns: auto 1fr auto;
+    gap: 0.55rem;
+  }
+
+  .finance-goal__meta strong {
+    font-size: 1.05rem;
+  }
+
+  .finance-goal__meta span {
+    font-size: 0.92rem;
+  }
+
+  .finance-goal__habits {
+    font-size: 0.82rem;
+  }
+
+  .finance-goal__del {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.55rem;
+  }
+
+  .finance-goal__chip {
+    min-height: 2.4rem;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .finance-goal__add {
+    flex: 1 1 100%;
+    margin-left: 0;
+    max-width: none;
+  }
+
+  .finance-goal__add input {
+    font-size: 1rem;
+    min-height: 44px;
+  }
+
+  .finance-goal__add-btn {
+    width: 2.6rem;
+    height: 2.6rem;
+  }
+
+  .import-item__main {
+    grid-template-columns: auto 1fr auto;
+    gap: 0.55rem;
+    padding: 0.95rem 0.85rem;
+  }
+
+  .import-item__body strong {
+    font-size: 1.02rem;
+  }
+
+  .import-item__body span {
+    font-size: 0.88rem;
+  }
+
+  .import-item__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .import-item__grid input,
+  .import-item__grid select {
+    font-size: 1rem;
+    min-height: 46px;
+  }
+
+  /* —— Config —— */
+  .config-hero-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .config-card {
+    padding: 1.05rem;
+  }
+
+  .config-card__head span {
+    font-size: 0.9rem;
+  }
+
+  .config-sync-row {
+    font-size: 0.85rem;
+  }
+
+  .config-hint {
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .config-tabs {
+    width: 100%;
+  }
+
+  .config-tabs .btn,
+  .config-tabs button {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .config-pref__row {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .config-accent__swatches {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .config-accent__swatch em {
+    font-size: 0.82rem;
+  }
+
+  .rest-prefs__btn {
+    min-height: 2.75rem;
+    font-size: 0.9rem;
+  }
+
+  /* —— Dialogs / toasts —— */
+  .app-confirm__card {
+    width: min(420px, 100%);
+    padding: 1.35rem 1.2rem;
+  }
+
+  .app-confirm__card h2 {
+    font-size: 1.25rem;
+  }
+
+  .app-confirm__card > p {
+    font-size: 0.98rem;
+  }
+
+  .app-confirm__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .app-confirm__actions .btn {
+    width: 100%;
+  }
+
+  .app-toast__close {
+    width: 36px;
+    height: 36px;
+  }
+
+  .app-update-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .app-update-banner p {
+    min-width: 0;
+  }
+
+  .app-update-banner .btn {
+    width: 100%;
+  }
+
+  .module-stat {
+    padding: 1rem;
+  }
+
+  .module-stat span {
+    font-size: 0.9rem;
   }
 
   .treino-section-actions {
