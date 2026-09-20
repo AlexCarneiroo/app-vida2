@@ -50,7 +50,7 @@ export function ModulePage({
             borderRadius: 18,
             display: 'grid',
             placeItems: 'center',
-            background: 'rgba(240, 230, 216, 0.1)',
+            background: 'rgba(var(--ink-rgb), 0.1)',
             marginBottom: '1rem',
             color: glow,
           }}

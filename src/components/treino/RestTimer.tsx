@@ -1,3 +1,4 @@
+import { Timer, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { formatDuration } from '../../lib/date'
 import type { TreinoSettings } from '../../types/treino'
@@ -5,9 +6,7 @@ import type { TreinoSettings } from '../../types/treino'
 const PRESETS: TreinoSettings['restSeconds'][] = [60, 90, 120]
 
 type RestTimerProps = {
-  /** Duração inicial em segundos */
   duration: number
-  /** Muda a cada nova série → reinicia o timer de forma fiável */
   restartKey: number
   preferredSeconds: TreinoSettings['restSeconds']
   onPreferredChange: (seconds: TreinoSettings['restSeconds']) => void
@@ -55,6 +54,7 @@ export function RestTimer({
   }, [duration, restartKey])
 
   const ratio = total <= 0 ? 0 : Math.min(1, left / total)
+  const done = left <= 0
 
   function addSeconds(extra: number) {
     endAtRef.current += extra * 1000
@@ -72,34 +72,29 @@ export function RestTimer({
   }
 
   return (
-    <div className="rest-timer" role="status" aria-live="polite">
-      <div className="rest-timer__bar">
+    <div
+      className={`rest-timer${done ? ' is-done' : ''}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="rest-timer__bar" aria-hidden>
         <div
           className="rest-timer__fill"
           style={{ transform: `scaleX(${ratio})` }}
         />
       </div>
-      <div className="rest-timer__row">
-        <div>
-          <p className="page-kicker">Descanso</p>
-          <strong className="rest-timer__time">
-            {formatDuration(left * 1000)}
-          </strong>
+
+      <div className="rest-timer__main">
+        <div className="rest-timer__label">
+          <Timer size={16} aria-hidden />
+          <span>{done ? 'Descanso feito' : 'Descanso'}</span>
         </div>
-        <div className="rest-timer__actions">
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => addSeconds(15)}
-          >
-            +15s
-          </button>
-          <button type="button" className="btn btn--primary" onClick={onClose}>
-            {left <= 0 ? 'Pronto' : 'Pular'}
-          </button>
-        </div>
+        <strong className="rest-timer__time">
+          {formatDuration(Math.max(0, left) * 1000)}
+        </strong>
       </div>
-      <div className="rest-timer__presets">
+
+      <div className="rest-timer__presets" role="group" aria-label="Duração">
         {PRESETS.map((sec) => (
           <button
             key={sec}
@@ -110,6 +105,32 @@ export function RestTimer({
             {sec}s
           </button>
         ))}
+        <button
+          type="button"
+          className="rest-timer__preset"
+          onClick={() => addSeconds(15)}
+        >
+          +15s
+        </button>
+      </div>
+
+      <div className="rest-timer__actions">
+        <button
+          type="button"
+          className="rest-timer__skip"
+          onClick={onClose}
+          aria-label={done ? 'Fechar' : 'Pular descanso'}
+        >
+          <X size={16} />
+          {done ? 'Fechar' : 'Pular'}
+        </button>
+        <button
+          type="button"
+          className="btn btn--primary rest-timer__cta"
+          onClick={onClose}
+        >
+          {done ? 'Continuar' : 'Pular descanso'}
+        </button>
       </div>
     </div>
   )

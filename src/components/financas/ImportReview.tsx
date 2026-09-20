@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ChevronDown, FileUp, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, FileUp, Loader2, Trash2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import {
   CATEGORY_LABELS,
@@ -13,6 +13,8 @@ import {
   type ImportDraft,
 } from '../../lib/bankImport'
 import { formatBRL, parseBRLInput, sanitizeMoneyTyping } from '../../lib/date'
+import { useBusyAction } from '../../hooks/useBusyAction'
+import { Button } from '../ui/Button'
 import { useConfirm, useToast } from '../ui/Feedback'
 import type { FinanceCategory, TxType } from '../../types/financas'
 
@@ -49,6 +51,7 @@ export function ImportReview({
 }: ImportReviewProps) {
   const { confirm } = useConfirm()
   const { toast } = useToast()
+  const { busy: saving, run: runSave } = useBusyAction()
   const [rows, setRows] = useState(initial)
   const [amountDrafts, setAmountDrafts] = useState<Record<string, string>>(
     () =>
@@ -113,17 +116,19 @@ export function ImportReview({
   }
 
   function handleSave() {
-    let ready = rows.filter((r) => r.selected && r.amount > 0)
-    if (remapMonth) ready = applyMonthToDrafts(ready, targetMonth)
-    onSave(
-      ready.map(({ type, amount, category, note, dateKey }) => ({
-        type,
-        amount,
-        category,
-        note,
-        dateKey,
-      })),
-    )
+    void runSave(() => {
+      let ready = rows.filter((r) => r.selected && r.amount > 0)
+      if (remapMonth) ready = applyMonthToDrafts(ready, targetMonth)
+      onSave(
+        ready.map(({ type, amount, category, note, dateKey }) => ({
+          type,
+          amount,
+          category,
+          note,
+          dateKey,
+        })),
+      )
+    })
   }
 
   return (
@@ -148,15 +153,17 @@ export function ImportReview({
             {selectedCount} movimentos · {source.toUpperCase()}
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn--primary import-review__save"
+        <Button
+          variant="primary"
+          className="import-review__save"
+          icon={<Check size={16} />}
           disabled={selectedCount === 0}
+          loading={saving}
+          loadingLabel="A guardar…"
           onClick={handleSave}
         >
-          <Check size={16} />
           Guardar
-        </button>
+        </Button>
       </header>
 
       <div className="import-review__summary">
@@ -363,8 +370,12 @@ export function ImportBankButton({ onParsed, onError }: ImportButtonProps) {
   }
 
   return (
-    <label className={`btn btn--ghost import-bank-btn${busy ? ' is-busy' : ''}`}>
-      <FileUp size={16} />
+    <label className={`btn btn--ghost import-bank-btn${busy ? ' is-busy is-loading' : ''}`}>
+      {busy ? (
+        <Loader2 size={16} className="btn__spinner" aria-hidden />
+      ) : (
+        <FileUp size={16} />
+      )}
       {busy ? 'A ler…' : 'Importar extrato'}
       <input
         type="file"

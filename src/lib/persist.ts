@@ -6,6 +6,7 @@ import {
 } from './migrate'
 import {
   SCHEMA_VERSION,
+  isPersistedDoc,
   wrapDoc,
   type PersistedDoc,
 } from './dataVersion'
@@ -87,12 +88,34 @@ export function savePersisted<T>(key: string, doc: PersistedDoc<T>) {
   }
 }
 
+/**
+ * Guarda estado no localStorage.
+ * Aceita o estado (`T`) ou um `PersistedDoc` já montado (não volta a embrulhar).
+ */
 export function touchPersisted<T>(
   key: string,
-  data: T,
-  updatedAt = Date.now(),
+  dataOrDoc: T | PersistedDoc<T>,
+  updatedAt?: number,
 ): PersistedDoc<T> {
-  const doc = wrapDoc(data, updatedAt)
+  let doc: PersistedDoc<T>
+
+  if (isPersistedDoc(dataOrDoc)) {
+    // Evita double-wrap: { schemaVersion, data: { schemaVersion, data: T } }
+    let inner: unknown = dataOrDoc.data
+    let at = dataOrDoc.updatedAt
+    while (isPersistedDoc(inner)) {
+      at = Math.max(at || 0, inner.updatedAt || 0)
+      inner = inner.data
+    }
+    doc = {
+      schemaVersion: SCHEMA_VERSION,
+      updatedAt: updatedAt ?? (at > 0 ? at : Date.now()),
+      data: inner as T,
+    }
+  } else {
+    doc = wrapDoc(dataOrDoc, updatedAt ?? Date.now())
+  }
+
   savePersisted(key, doc)
   return doc
 }

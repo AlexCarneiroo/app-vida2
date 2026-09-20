@@ -5,6 +5,14 @@ export function dateKey(d = new Date()) {
   return `${y}-${m}-${day}`
 }
 
+/** Soma ou subtrai dias a um YYYY-MM-DD. */
+export function shiftDateKey(key: string, deltaDays: number) {
+  const [y, m, d] = key.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  date.setDate(date.getDate() + deltaDays)
+  return dateKey(date)
+}
+
 export function uid(prefix = 'id') {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`
 }

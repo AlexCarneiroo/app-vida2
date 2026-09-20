@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileDown,
+  Loader2,
   PiggyBank,
   Plus,
   Target,
@@ -16,6 +17,7 @@ import {
   ImportBankButton,
   ImportReview,
 } from '../components/financas/ImportReview'
+import { Button } from '../components/ui/Button'
 import {
   PageTransition,
   staggerContainer,
@@ -26,7 +28,9 @@ import {
   CATEGORY_LABELS,
   categoriesForType,
 } from '../data/financasDefaults'
+import { useBusyAction } from '../hooks/useBusyAction'
 import { useFinancas } from '../hooks/useFinancas'
+import { useHabitos } from '../hooks/useHabitos'
 import type { ImportDraft } from '../lib/bankImport'
 import {
   dateKey,
@@ -54,6 +58,12 @@ type ImportSession = {
 export function FinancasPage() {
   const { toast } = useToast()
   const { confirm } = useConfirm()
+  const { busy: savingTx, run: runSaveTx } = useBusyAction()
+  const { busy: savingGoal, run: runSaveGoal } = useBusyAction()
+  const { busy: exporting, run: runExport } = useBusyAction()
+  const [removingTxId, setRemovingTxId] = useState<string | null>(null)
+  const [removingGoalId, setRemovingGoalId] = useState<string | null>(null)
+  const [addingGoalId, setAddingGoalId] = useState<string | null>(null)
   const {
     state,
     monthKey,
@@ -69,6 +79,18 @@ export function FinancasPage() {
     shiftMonth,
     setMonth,
   } = useFinancas()
+  const { habits } = useHabitos()
+
+  const habitsByGoal = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const h of habits) {
+      if (!h.linkedGoalId) continue
+      const list = map.get(h.linkedGoalId) ?? []
+      list.push(h.name)
+      map.set(h.linkedGoalId, list)
+    }
+    return map
+  }, [habits])
 
   const goals = state.goals
   const [type, setType] = useState<TxType>('expense')
@@ -104,32 +126,36 @@ export function FinancasPage() {
     e.preventDefault()
     const value = parseBRLInput(amount)
     if (!value || !txDate) return
-    addTransaction({
-      type,
-      amount: value,
-      category,
-      note,
-      dateKey: txDate,
+    void runSaveTx(() => {
+      addTransaction({
+        type,
+        amount: value,
+        category,
+        note,
+        dateKey: txDate,
+      })
+      const txMonth = txDate.slice(0, 7)
+      if (txMonth !== monthKey) setMonth(txMonth)
+      setAmount('')
+      setNote('')
+      setShowForm(false)
+      toast(
+        type === 'income' ? 'Entrada adicionada' : 'Saída adicionada',
+        'ok',
+      )
     })
-    const txMonth = txDate.slice(0, 7)
-    if (txMonth !== monthKey) setMonth(txMonth)
-    setAmount('')
-    setNote('')
-    setShowForm(false)
-    toast(
-      type === 'income' ? 'Entrada adicionada' : 'Saída adicionada',
-      'ok',
-    )
   }
 
   function handleAddGoal(e: FormEvent) {
     e.preventDefault()
     const target = parseBRLInput(goalTarget)
     if (!goalName.trim() || !target) return
-    addGoal(goalName, target)
-    setGoalName('')
-    setGoalTarget('')
-    toast('Meta criada', 'ok')
+    void runSaveGoal(() => {
+      addGoal(goalName, target)
+      setGoalName('')
+      setGoalTarget('')
+      toast('Meta criada', 'ok')
+    })
   }
 
   async function handleRemoveTx(id: string) {
@@ -139,8 +165,13 @@ export function FinancasPage() {
       confirmLabel: 'Excluir',
     })
     if (!ok) return
-    removeTransaction(id)
-    toast('Movimento excluído', 'info')
+    setRemovingTxId(id)
+    try {
+      removeTransaction(id)
+      toast('Movimento excluído', 'info')
+    } finally {
+      setRemovingTxId(null)
+    }
   }
 
   async function handleRemoveGoal(id: string, name: string) {
@@ -150,15 +181,22 @@ export function FinancasPage() {
       confirmLabel: 'Excluir',
     })
     if (!ok) return
-    removeGoal(id)
-    toast('Meta excluída', 'info')
+    setRemovingGoalId(id)
+    try {
+      removeGoal(id)
+      toast('Meta excluída', 'info')
+    } finally {
+      setRemovingGoalId(null)
+    }
   }
 
   function addToGoal(id: string, delta: number) {
     const goal = goals.find((g) => g.id === id)
     if (!goal || delta <= 0) return
+    setAddingGoalId(id)
     updateGoalSaved(id, goal.saved + delta)
     toast(`+${formatBRL(delta)} na meta`, 'ok')
+    window.setTimeout(() => setAddingGoalId(null), 280)
   }
 
   if (importSession) {
@@ -204,29 +242,32 @@ export function FinancasPage() {
             }}
             onError={(message) => toast(message, 'warn')}
           />
-          <button
-            type="button"
-            className="btn btn--ghost"
+          <Button
+            variant="ghost"
+            icon={<FileDown size={16} />}
+            loading={exporting}
+            loadingLabel="A exportar…"
             onClick={() => {
-              exportMonthPdf({
-                monthKey,
-                transactions: monthTransactions,
-                stats,
+              void runExport(() => {
+                exportMonthPdf({
+                  monthKey,
+                  transactions: monthTransactions,
+                  stats,
+                })
+                toast('PDF exportado', 'ok')
               })
-              toast('PDF exportado', 'ok')
             }}
           >
-            <FileDown size={16} />
             PDF
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
+          </Button>
+          <Button
+            variant="primary"
+            icon={<Plus size={16} />}
             onClick={openOrCloseForm}
+            disabled={savingTx}
           >
-            <Plus size={16} />
             {showForm ? 'Fechar' : 'Adicionar'}
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -364,10 +405,15 @@ export function FinancasPage() {
               </label>
             </div>
 
-            <button type="submit" className="btn btn--primary">
-              <Plus size={16} />
+            <Button
+              type="submit"
+              variant="primary"
+              icon={<Plus size={16} />}
+              loading={savingTx}
+              loadingLabel="A guardar…"
+            >
               Guardar {type === 'income' ? 'entrada' : 'saída'}
-            </button>
+            </Button>
           </motion.form>
         )}
       </AnimatePresence>
@@ -449,14 +495,15 @@ export function FinancasPage() {
                 {tx.type === 'income' ? '+' : '−'}
                 {formatBRL(tx.amount)}
               </em>
-              <button
-                type="button"
-                className="btn btn--ghost finance-row__del"
+              <Button
+                variant="ghost"
+                className="finance-row__del"
+                icon={<Trash2 size={14} />}
+                loading={removingTxId === tx.id}
                 onClick={() => handleRemoveTx(tx.id)}
                 title="Remover"
-              >
-                <Trash2 size={14} />
-              </button>
+                aria-label="Remover movimento"
+              />
             </div>
           ))}
         </div>
@@ -486,16 +533,22 @@ export function FinancasPage() {
                     {formatBRL(goal.saved)}
                     <em> de {formatBRL(goal.target)}</em>
                   </span>
+                  {(habitsByGoal.get(goal.id)?.length ?? 0) > 0 && (
+                    <em className="finance-goal__habits">
+                      Hábitos: {habitsByGoal.get(goal.id)!.join(' · ')}
+                    </em>
+                  )}
                 </div>
                 <span className="finance-goal__pct">{pct}%</span>
-                <button
-                  type="button"
-                  className="btn btn--ghost finance-goal__del"
+                <Button
+                  variant="ghost"
+                  className="finance-goal__del"
+                  icon={<Trash2 size={14} />}
+                  loading={removingGoalId === goal.id}
                   onClick={() => handleRemoveGoal(goal.id, goal.name)}
                   title="Remover meta"
-                >
-                  <Trash2 size={14} />
-                </button>
+                  aria-label={`Remover meta ${goal.name}`}
+                />
               </div>
 
               <div
@@ -554,15 +607,21 @@ export function FinancasPage() {
                   />
                   <button
                     type="button"
-                    className="finance-goal__add-btn"
+                    className={`finance-goal__add-btn${addingGoalId === goal.id ? ' is-loading' : ''}`}
+                    disabled={addingGoalId === goal.id}
                     onClick={() => {
                       const v = parseBRLInput(goalAdds[goal.id] ?? '')
                       if (!v) return
                       addToGoal(goal.id, v)
                       setGoalAdds((prev) => ({ ...prev, [goal.id]: '' }))
                     }}
+                    aria-label="Adicionar valor"
                   >
-                    <Plus size={14} />
+                    {addingGoalId === goal.id ? (
+                      <Loader2 size={14} className="btn__spinner" aria-hidden />
+                    ) : (
+                      <Plus size={14} />
+                    )}
                   </button>
                 </div>
               </div>
@@ -599,10 +658,15 @@ export function FinancasPage() {
             />
           </label>
         </div>
-        <button type="submit" className="btn btn--primary">
-          <Plus size={16} />
+        <Button
+          type="submit"
+          variant="primary"
+          icon={<Plus size={16} />}
+          loading={savingGoal}
+          loadingLabel="A criar…"
+        >
           Criar meta
-        </button>
+        </Button>
       </form>
     </PageTransition>
   )

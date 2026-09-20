@@ -20,4 +20,5 @@ export function createBlock(
 export const emptyRotinaState = (): RotinaState => ({
   dayKey: dateKey(),
   blocks: [],
+  dayLog: {},
 })

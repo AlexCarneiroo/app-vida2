@@ -4,6 +4,7 @@ import { AppNav } from './AppNav'
 import { OfflineBanner } from './OfflineBanner'
 import { CloudSyncBadge } from '../ui/CloudSyncBadge'
 import { AppUpdateBanner } from '../ui/AppUpdateBanner'
+import { PullToRefresh } from '../ui/PullToRefresh'
 import { ensureCloudUser } from '../../lib/cloudSync'
 import { firebaseReady, initAnalytics } from '../../lib/firebase'
 import { useEffect } from 'react'
@@ -24,7 +25,9 @@ export function AppShell() {
       <div className="app-shell">
         <AppNav variant="side" />
         <main className="app-main">
-          <Outlet />
+          <PullToRefresh>
+            <Outlet />
+          </PullToRefresh>
         </main>
         <AppNav variant="bottom" />
       </div>

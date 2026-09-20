@@ -1,5 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ChevronDown, LayoutTemplate } from 'lucide-react'
+import {
+  Bookmark,
+  Check,
+  ChevronDown,
+  LayoutTemplate,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import {
   PLAN_GOAL_LABELS,
@@ -8,6 +15,9 @@ import {
   type WeeklyPlanPreset,
 } from '../../data/planPresets'
 import { DAY_LABELS } from '../../data/treinoDefaults'
+import type { SavedCustomPlan } from '../../types/treino'
+import { Button } from '../ui/Button'
+import { useConfirm, useToast } from '../ui/Feedback'
 
 const GOAL_FILTERS: Array<PlanGoal | 'all'> = [
   'all',
@@ -20,18 +30,31 @@ const GOAL_FILTERS: Array<PlanGoal | 'all'> = [
 
 type PlanPresetsProps = {
   activePresetId: string | null
+  activeSavedPlanId: string | null
+  savedPlans: SavedCustomPlan[]
   onApply: (presetId: string) => void
+  onApplySaved: (planId: string) => void
+  onRemoveSaved: (planId: string) => void
+  onCreateCustom: () => void
   onDone: () => void
 }
 
 export function PlanPresets({
   activePresetId,
+  activeSavedPlanId,
+  savedPlans,
   onApply,
+  onApplySaved,
+  onRemoveSaved,
+  onCreateCustom,
   onDone,
 }: PlanPresetsProps) {
+  const { confirm } = useConfirm()
+  const { toast } = useToast()
   const [goal, setGoal] = useState<PlanGoal | 'all'>('all')
   const [openId, setOpenId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [removingId, setRemovingId] = useState<string | null>(null)
 
   const list = useMemo(() => {
     if (goal === 'all') return PLAN_PRESETS
@@ -49,12 +72,160 @@ export function PlanPresets({
     onDone()
   }
 
+  function handleApplySaved(plan: SavedCustomPlan) {
+    if (confirmId !== plan.id) {
+      setConfirmId(plan.id)
+      setOpenId(plan.id)
+      return
+    }
+    onApplySaved(plan.id)
+    setConfirmId(null)
+    toast('Plano personalizado aplicado', 'ok')
+    onDone()
+  }
+
+  async function handleRemoveSaved(plan: SavedCustomPlan) {
+    const ok = await confirm({
+      title: 'Apagar plano guardado?',
+      message: `“${plan.name}” será removido da tua lista.`,
+      confirmLabel: 'Apagar',
+    })
+    if (!ok) return
+    setRemovingId(plan.id)
+    onRemoveSaved(plan.id)
+    setRemovingId(null)
+    toast('Plano removido', 'info')
+  }
+
   return (
     <div className="plan-presets">
       <p className="plan-presets__intro">
-        Escolhe um plano pronto conforme o teu objetivo. Depois podes editar
-        dia a dia se quiseres ajustar.
+        Os teus planos guardados aparecem primeiro. Também podes criar um plano
+        do zero ou escolher um pronto e depois editar.
       </p>
+
+      <button
+        type="button"
+        className="surface surface--interactive plan-create-card"
+        onClick={onCreateCustom}
+      >
+        <span className="plan-create-card__icon" aria-hidden>
+          <Plus size={20} />
+        </span>
+        <span className="plan-create-card__copy">
+          <strong>Criar o meu plano</strong>
+          <span>Monta treinos à tua preferência, dia a dia</span>
+        </span>
+      </button>
+
+      {savedPlans.length > 0 && (
+        <>
+          <div className="section-label">
+            <h2>Os meus planos</h2>
+            <span>{savedPlans.length}</span>
+          </div>
+          <div className="plan-presets__list">
+            {savedPlans.map((plan) => {
+              const isOpen = openId === plan.id
+              const isActive = activeSavedPlanId === plan.id
+              const confirming = confirmId === plan.id
+              return (
+                <article
+                  key={plan.id}
+                  className={`surface plan-preset-card plan-preset-card--saved${isActive ? ' is-current' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="plan-preset-card__head"
+                    onClick={() => setOpenId(isOpen ? null : plan.id)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="plan-preset-card__icon is-saved">
+                      <Bookmark size={18} />
+                    </span>
+                    <span className="plan-preset-card__info">
+                      <strong>{plan.name}</strong>
+                      <span>
+                        {plan.tagline ||
+                          `${plan.templates.length} dias · personalizado`}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`treino-ex__chevron${isOpen ? ' is-open' : ''}`}
+                    />
+                  </button>
+
+                  <div className="plan-preset-card__meta">
+                    <em>Personalizado</em>
+                    <em>{plan.templates.length} dias</em>
+                    {isActive && (
+                      <em className="is-current-tag">
+                        <Check size={12} /> Atual
+                      </em>
+                    )}
+                  </div>
+
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        className="plan-preset-card__body"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                      >
+                        <ul className="plan-preset-card__days">
+                          {plan.templates
+                            .slice()
+                            .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
+                            .map((t) => (
+                              <li key={t.id}>
+                                <strong>{DAY_LABELS[t.dayOfWeek]}</strong>
+                                <span>
+                                  {t.name} · {t.exercises.length} ex. · ~
+                                  {t.estimatedMin} min
+                                </span>
+                              </li>
+                            ))}
+                        </ul>
+
+                        <div className="plan-preset-card__row-actions">
+                          <button
+                            type="button"
+                            className={`btn ${confirming ? 'btn--primary' : 'btn--ghost'}`}
+                            onClick={() => handleApplySaved(plan)}
+                            disabled={isActive}
+                          >
+                            {isActive
+                              ? 'Já estás neste plano'
+                              : confirming
+                                ? 'Confirmar — aplicar'
+                                : 'Usar este plano'}
+                          </button>
+                          <Button
+                            variant="ghost"
+                            className="finance-row__del"
+                            icon={<Trash2 size={14} />}
+                            loading={removingId === plan.id}
+                            onClick={() => handleRemoveSaved(plan)}
+                            aria-label={`Apagar ${plan.name}`}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </article>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      <div className="section-label">
+        <h2>Planos prontos</h2>
+        <span>{list.length}</span>
+      </div>
 
       <div className="plan-presets__filters" role="tablist">
         {GOAL_FILTERS.map((g) => (

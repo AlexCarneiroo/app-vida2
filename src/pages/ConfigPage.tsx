@@ -5,13 +5,19 @@ import {
   LogIn,
   LogOut,
   Mail,
+  Moon,
   Phone,
   Settings,
+  Sun,
+  Timer,
   UserRound,
 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { Button } from '../components/ui/Button'
 import { PageTransition } from '../components/ui/PageTransition'
 import { useAuth } from '../hooks/useAuth'
+import { useTheme, ACCENT_OPTIONS } from '../hooks/useTheme'
+import { useTreino } from '../hooks/useTreino'
 import { useConfirm, useToast } from '../components/ui/Feedback'
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from '../lib/cloudSync'
 import { firebaseReady } from '../lib/firebase'
@@ -31,8 +37,12 @@ export function ConfigPage() {
     saveProfile,
     authErrorMessage,
   } = useAuth()
+  const { theme, setTheme, accent, setAccent } = useTheme()
+  const { state, setRestTimerEnabled, setRestSeconds } = useTreino()
   const { toast } = useToast()
   const { confirm } = useConfirm()
+  const restTimerEnabled = state.settings.restTimerEnabled
+  const restSeconds = state.settings.restSeconds
 
   const [tab, setTab] = useState<AuthTab>('login')
   const [name, setName] = useState('')
@@ -136,7 +146,7 @@ export function ConfigPage() {
           <p className="page-kicker">Conta</p>
           <h1 className="page-title">Configuração</h1>
           <p className="page-sub">
-            Os teus dados, login e sincronização com a nuvem.
+            Os teus dados, aparência e sincronização com a nuvem.
           </p>
         </div>
         <span className="config-hero-icon" aria-hidden>
@@ -185,6 +195,110 @@ export function ConfigPage() {
         </div>
       </section>
 
+      <div className="section-label">
+        <h2>Aparência</h2>
+        <span>Tema e cor</span>
+      </div>
+
+      <section className="surface config-theme" aria-label="Escolher tema">
+        <p className="config-theme__hint">
+          Escolhe o modo claro ou escuro. A preferência fica guardada neste
+          dispositivo.
+        </p>
+        <div className="config-theme__options" role="group">
+          <button
+            type="button"
+            className={theme === 'light' ? 'is-active' : ''}
+            onClick={() => setTheme('light')}
+            aria-pressed={theme === 'light'}
+          >
+            <Sun size={18} />
+            Claro
+          </button>
+          <button
+            type="button"
+            className={theme === 'dark' ? 'is-active' : ''}
+            onClick={() => setTheme('dark')}
+            aria-pressed={theme === 'dark'}
+          >
+            <Moon size={18} />
+            Escuro
+          </button>
+        </div>
+
+        <div className="config-accent">
+          <p className="config-theme__hint">Cor principal</p>
+          <div className="config-accent__swatches" role="group" aria-label="Cor principal">
+            {ACCENT_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`config-accent__swatch${accent === opt.id ? ' is-active' : ''}`}
+                style={{ '--swatch': opt.swatch } as CSSProperties}
+                onClick={() => setAccent(opt.id)}
+                aria-pressed={accent === opt.id}
+                aria-label={opt.label}
+                title={opt.label}
+              >
+                <span className="config-accent__dot" aria-hidden />
+                <em>{opt.label}</em>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="section-label">
+        <h2>Treino</h2>
+        <span>Descanso</span>
+      </div>
+
+      <section className="surface config-pref" aria-label="Contador de descanso">
+        <div className="config-pref__row">
+          <div className="config-pref__info">
+            <span className="config-pref__icon" aria-hidden>
+              <Timer size={18} />
+            </span>
+            <div>
+              <strong>Contador de descanso</strong>
+              <p>
+                Aparece após marcares uma série. Desativa se preferires
+                treinar sem o timer.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`config-switch${restTimerEnabled ? ' is-on' : ''}`}
+            role="switch"
+            aria-checked={restTimerEnabled}
+            aria-label="Contador de descanso"
+            onClick={() => setRestTimerEnabled(!restTimerEnabled)}
+          >
+            <span className="config-switch__knob" />
+          </button>
+        </div>
+
+        {restTimerEnabled && (
+          <div className="config-pref__presets" role="group" aria-label="Duração padrão">
+            <span>Duração padrão</span>
+            <div className="rest-prefs__btns">
+              {([60, 90, 120] as const).map((sec) => (
+                <button
+                  key={sec}
+                  type="button"
+                  className={`rest-prefs__btn${restSeconds === sec ? ' is-active' : ''}`}
+                  onClick={() => setRestSeconds(sec)}
+                  aria-pressed={restSeconds === sec}
+                >
+                  {sec}s
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
       {isRegistered ? (
         <>
           <div className="section-label">
@@ -230,22 +344,23 @@ export function ConfigPage() {
                 />
               </div>
             </label>
-            <button
+            <Button
               type="submit"
-              className="btn btn--primary"
-              disabled={busy}
+              variant="primary"
+              loading={busy}
+              loadingLabel="A guardar…"
             >
               Guardar perfil
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="btn btn--ghost"
+              variant="ghost"
+              icon={<LogOut size={16} />}
               onClick={handleLogout}
               disabled={busy}
             >
-              <LogOut size={16} />
               Sair da conta
-            </button>
+            </Button>
           </form>
         </>
       ) : (
@@ -338,23 +453,18 @@ export function ConfigPage() {
 
               {error && <p className="config-error">{error}</p>}
 
-              <button
+              <Button
                 type="submit"
-                className="btn btn--primary"
-                disabled={busy || !firebaseReady}
+                variant="primary"
+                icon={
+                  tab === 'login' ? <LogIn size={16} /> : <UserRound size={16} />
+                }
+                loading={busy}
+                loadingLabel={tab === 'login' ? 'A entrar…' : 'A criar…'}
+                disabled={!firebaseReady}
               >
-                {tab === 'login' ? (
-                  <>
-                    <LogIn size={16} />
-                    Entrar
-                  </>
-                ) : (
-                  <>
-                    <UserRound size={16} />
-                    Criar conta
-                  </>
-                )}
-              </button>
+                {tab === 'login' ? 'Entrar' : 'Criar conta'}
+              </Button>
 
               {tab === 'register' && (
                 <p className="config-hint">

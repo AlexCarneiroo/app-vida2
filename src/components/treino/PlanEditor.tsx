@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Moon, Plus, Trash2 } from 'lucide-react'
+import { BookmarkPlus, ChevronLeft, ChevronRight, Moon, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import {
   defaultExerciseName,
@@ -11,16 +11,22 @@ import {
   MUSCLE_GROUPS,
   PLAN_DAY_ORDER,
 } from '../../data/treinoDefaults'
+import {
+  WORKOUT_STARTERS,
+  type WorkoutStarterId,
+} from '../../data/workoutStarters'
 import type { MuscleGroup, WorkoutTemplate } from '../../types/treino'
+import { Button } from '../ui/Button'
 import { useConfirm, useToast } from '../ui/Feedback'
 
 type PlanEditorProps = {
   plan: WorkoutTemplate[]
+  activeSavedPlanId: string | null
   onUpdateTemplate: (
     templateId: string,
     patch: Partial<Omit<WorkoutTemplate, 'id' | 'exercises'>>,
   ) => void
-  onAddTemplate: (dayOfWeek?: number) => void
+  onAddTemplate: (dayOfWeek?: number, starter?: WorkoutStarterId) => void
   onRemoveTemplate: (templateId: string) => void
   onAddExercise: (templateId: string) => void
   onUpdateExercise: (
@@ -42,11 +48,15 @@ type PlanEditorProps = {
     patch: Partial<{ reps: number; weight: number }>,
   ) => void
   onReset: () => void
+  onSavePlan: (name: string) => string | null
+  onUpdateSavedPlan: (planId: string) => void
   onDone: () => void
+  onCancel: () => void
 }
 
 export function PlanEditor({
   plan,
+  activeSavedPlanId,
   onUpdateTemplate,
   onAddTemplate,
   onRemoveTemplate,
@@ -57,12 +67,18 @@ export function PlanEditor({
   onRemoveSet,
   onUpdateSet,
   onReset,
+  onSavePlan,
+  onUpdateSavedPlan,
   onDone,
+  onCancel,
 }: PlanEditorProps) {
   const { confirm } = useConfirm()
   const { toast } = useToast()
-  const [dayIndex, setDayIndex] = useState(0) // índice em PLAN_DAY_ORDER
+  const [dayIndex, setDayIndex] = useState(0)
   const [customExId, setCustomExId] = useState<string | null>(null)
+  const [showSave, setShowSave] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const dayOfWeek = PLAN_DAY_ORDER[dayIndex]
   const template = useMemo(
@@ -87,9 +103,11 @@ export function PlanEditor({
     setDayIndex((i) => i + 1)
   }
 
-  function enableWorkout() {
-    onAddTemplate(dayOfWeek)
-    toast('Dia marcado para treinar', 'ok')
+  function enableWorkout(starter: WorkoutStarterId = 'custom') {
+    onAddTemplate(dayOfWeek, starter)
+    const label =
+      WORKOUT_STARTERS.find((s) => s.id === starter)?.label ?? 'Treino'
+    toast(`${label} adicionado a ${DAY_NAMES[dayOfWeek]}`, 'ok')
   }
 
   async function setAsRest() {
@@ -139,6 +157,39 @@ export function PlanEditor({
     toast('Plano restaurado', 'ok')
   }
 
+  function handleSaveNew() {
+    if (plan.length === 0) {
+      toast('Adiciona pelo menos um dia de treino', 'warn')
+      return
+    }
+    if (!saveName.trim()) {
+      toast('Dá um nome ao teu plano', 'warn')
+      return
+    }
+    setSaving(true)
+    const id = onSavePlan(saveName.trim())
+    setSaving(false)
+    if (!id) {
+      toast('Não foi possível guardar', 'warn')
+      return
+    }
+    setShowSave(false)
+    setSaveName('')
+    toast('Plano personalizado guardado', 'ok')
+  }
+
+  function handleUpdateExisting() {
+    if (!activeSavedPlanId) return
+    if (plan.length === 0) {
+      toast('Adiciona pelo menos um dia de treino', 'warn')
+      return
+    }
+    setSaving(true)
+    onUpdateSavedPlan(activeSavedPlanId)
+    setSaving(false)
+    toast('Plano guardado atualizado', 'ok')
+  }
+
   function changeMuscle(exerciseId: string, muscle: MuscleGroup) {
     if (!template) return
     onUpdateExercise(template.id, exerciseId, {
@@ -163,18 +214,74 @@ export function PlanEditor({
     <div className="plan-editor">
       <div className="plan-editor__toolbar">
         <p className="plan-editor__hint">
-          Monta <strong>um dia de cada vez</strong>. Sábado e domingo (e
-          qualquer outro) podes deixar como descanso.
+          Monta <strong>um dia de cada vez</strong>. Quando estiveres satisfeito,
+          guarda o plano para reutilizar depois.
         </p>
         <div className="plan-editor__actions">
+          <button
+            type="button"
+            className="btn btn--cancel"
+            onClick={onCancel}
+          >
+            Cancelar
+          </button>
           <button type="button" className="btn btn--ghost" onClick={handleReset}>
             Padrão
           </button>
+          {activeSavedPlanId ? (
+            <Button
+              variant="ghost"
+              icon={<BookmarkPlus size={16} />}
+              loading={saving}
+              loadingLabel="A guardar…"
+              onClick={handleUpdateExisting}
+            >
+              Atualizar guardado
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            icon={<BookmarkPlus size={16} />}
+            onClick={() => setShowSave((v) => !v)}
+          >
+            {showSave ? 'Fechar' : 'Guardar plano'}
+          </Button>
           <button type="button" className="btn btn--primary" onClick={onDone}>
             Pronto
           </button>
         </div>
       </div>
+
+      {showSave && (
+        <form
+          className="surface plan-save-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleSaveNew()
+          }}
+        >
+          <label className="plan-field plan-field--grow">
+            <span>Nome do teu plano</span>
+            <input
+              type="text"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="Ex.: Meu PPL de casa"
+              required
+              autoFocus
+            />
+          </label>
+          <Button
+            type="submit"
+            variant="primary"
+            icon={<BookmarkPlus size={16} />}
+            loading={saving}
+            loadingLabel="A guardar…"
+          >
+            Guardar personalizado
+          </Button>
+        </form>
+      )}
 
       <div className="plan-day-tabs" role="tablist" aria-label="Dias da semana">
         {PLAN_DAY_ORDER.map((dow, i) => {
@@ -212,7 +319,7 @@ export function PlanEditor({
             <button
               type="button"
               className={`plan-day-toggle__btn${!isRest ? ' is-active' : ''}`}
-              onClick={enableWorkout}
+              onClick={() => enableWorkout('custom')}
               disabled={!isRest}
             >
               Treinar
@@ -234,9 +341,22 @@ export function PlanEditor({
             <Moon size={28} />
             <p>
               {isWeekend
-                ? 'Fim de semana em descanso. Se quiseres treinar, toca em Treinar.'
-                : 'Dia sem treino. Podes voltar a ativar quando quiseres.'}
+                ? 'Fim de semana em descanso. Escolhe um tipo de treino abaixo se quiseres treinar.'
+                : 'Dia livre. Escolhe um treino pronto ou cria o teu.'}
             </p>
+            <div className="plan-starters" role="group" aria-label="Tipo de treino">
+              {WORKOUT_STARTERS.map((starter) => (
+                <button
+                  key={starter.id}
+                  type="button"
+                  className={`plan-starter${starter.id === 'custom' ? ' is-preferred' : ''}`}
+                  onClick={() => enableWorkout(starter.id)}
+                >
+                  <strong>{starter.label}</strong>
+                  <span>{starter.hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           template && (

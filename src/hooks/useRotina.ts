@@ -13,6 +13,23 @@ function loadDoc() {
 
 const isEmpty = (d: RotinaState) => d.blocks.length === 0
 
+function withDayLog(
+  prev: RotinaState,
+  blocks: RotinaState['blocks'],
+  today: string,
+): RotinaState {
+  const done = blocks.filter((b) => b.doneToday).length
+  const dayLog = { ...(prev.dayLog ?? {}) }
+  if (done > 0) dayLog[today] = done
+  else delete dayLog[today]
+  return {
+    ...prev,
+    dayKey: today,
+    blocks,
+    dayLog,
+  }
+}
+
 export function useRotina() {
   const { state, update } = useCloudSyncedState<RotinaState>({
     collection: 'rotina',
@@ -26,7 +43,9 @@ export function useRotina() {
   useEffect(() => {
     if (state.dayKey === today) return
     update((prev) => ({
+      ...prev,
       dayKey: today,
+      dayLog: prev.dayLog ?? {},
       blocks: prev.blocks.map((b) => ({ ...b, doneToday: false })),
     }))
   }, [state.dayKey, today, update])
@@ -40,13 +59,12 @@ export function useRotina() {
 
   const toggleBlock = useCallback(
     (id: string) => {
-      update((prev) => ({
-        ...prev,
-        dayKey: today,
-        blocks: prev.blocks.map((b) =>
+      update((prev) => {
+        const blocksNext = prev.blocks.map((b) =>
           b.id === id ? { ...b, doneToday: !b.doneToday } : b,
-        ),
-      }))
+        )
+        return withDayLog(prev, blocksNext, today)
+      })
     },
     [today, update],
   )
@@ -54,7 +72,11 @@ export function useRotina() {
   const addBlock = useCallback(
     (time: string, title: string, detail = '') => {
       const block = createBlock(time, title, detail)
-      update((prev) => ({ ...prev, blocks: [...prev.blocks, block] }))
+      update((prev) => ({
+        ...prev,
+        dayLog: prev.dayLog ?? {},
+        blocks: [...prev.blocks, block],
+      }))
       return block.id
     },
     [update],
@@ -62,12 +84,12 @@ export function useRotina() {
 
   const removeBlock = useCallback(
     (id: string) => {
-      update((prev) => ({
-        ...prev,
-        blocks: prev.blocks.filter((b) => b.id !== id),
-      }))
+      update((prev) => {
+        const blocksNext = prev.blocks.filter((b) => b.id !== id)
+        return withDayLog(prev, blocksNext, today)
+      })
     },
-    [update],
+    [today, update],
   )
 
   const updateBlock = useCallback(
@@ -97,6 +119,7 @@ export function useRotina() {
     blocks,
     doneCount,
     total: blocks.length,
+    dayLog: state.dayLog ?? {},
     toggleBlock,
     addBlock,
     removeBlock,

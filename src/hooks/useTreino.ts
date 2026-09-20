@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { defaultExerciseName } from '../data/exerciseLibrary'
 import {
+  buildWorkoutTemplate,
+  type WorkoutStarterId,
+} from '../data/workoutStarters'
+import {
   clonePresetPlan,
   getPresetById,
 } from '../data/planPresets'
-import { DAY_NAMES, WEEKLY_PLAN, clonePlan } from '../data/treinoDefaults'
+import { WEEKLY_PLAN, clonePlan } from '../data/treinoDefaults'
 import {
   flushCloudSave,
   hydrateFromCloud,
   scheduleCloudSave,
 } from '../lib/cloudSync'
 import { dateKey, uid as makeId } from '../lib/date'
-import { SCHEMA_VERSION } from '../lib/dataVersion'
 import { loadTreinoPersisted, touchPersisted } from '../lib/persist'
 import {
   buildWorkoutSummary,
@@ -28,6 +31,7 @@ import type {
   ExerciseProgress,
   LoadSuggestion,
   MuscleGroup,
+  SavedCustomPlan,
   TemplateExercise,
   TreinoSettings,
   TreinoState,
@@ -37,7 +41,11 @@ import type {
 
 const STORAGE_KEY = 'vida.treino.v1'
 
-const defaultSettings: TreinoSettings = { restSeconds: 90 }
+const defaultSettings: TreinoSettings = {
+  restSeconds: 90,
+  restTimerEnabled: true,
+}
+
 
 const emptyState: TreinoState = {
   plan: [],
@@ -46,6 +54,8 @@ const emptyState: TreinoState = {
   weekDone: {},
   settings: defaultSettings,
   activePresetId: null,
+  activeSavedPlanId: null,
+  savedPlans: [],
 }
 
 function loadState(): TreinoState {
@@ -196,17 +206,6 @@ function blankExercise(): TemplateExercise {
   }
 }
 
-function blankTemplate(dayOfWeek: number): WorkoutTemplate {
-  return {
-    id: makeId('tpl'),
-    name: `Treino ${DAY_NAMES[dayOfWeek]}`,
-    focus: '',
-    estimatedMin: 45,
-    dayOfWeek,
-    exercises: [blankExercise()],
-  }
-}
-
 export function useTreino() {
   const { uid, ready: authReady } = useAuth()
   const [state, setState] = useState<TreinoState>(() =>
@@ -223,16 +222,29 @@ export function useTreino() {
     let cancelled = false
     hydratedRef.current = false
     ;(async () => {
-      const local = loadTreinoDoc()
+      const localAtStart = loadTreinoDoc()
       const next = await hydrateFromCloud(
         'treino',
-        local,
-        (d) => d.history.length === 0 && !d.active,
+        localAtStart,
+        (d) => d.history.length === 0 && !d.active && d.plan.length === 0,
       )
       if (cancelled) return
-      setState(next.data)
-      updatedAtRef.current = next.updatedAt
-      touchPersisted(STORAGE_KEY, next)
+      const latestLocal = loadTreinoDoc()
+      let finalDoc = next
+      if (
+        latestLocal.updatedAt > localAtStart.updatedAt &&
+        latestLocal.updatedAt >= next.updatedAt
+      ) {
+        finalDoc = await hydrateFromCloud(
+          'treino',
+          latestLocal,
+          (d) => d.history.length === 0 && !d.active && d.plan.length === 0,
+        )
+      }
+      if (cancelled) return
+      setState(finalDoc.data)
+      updatedAtRef.current = finalDoc.updatedAt
+      touchPersisted(STORAGE_KEY, finalDoc.data, finalDoc.updatedAt)
       hydratedRef.current = true
     })()
     return () => {
@@ -241,35 +253,27 @@ export function useTreino() {
   }, [uid, authReady])
 
   useEffect(() => {
-    if (!hydratedRef.current) {
-      // ainda assim guarda local sem subir versão de sync prematura
-      touchPersisted(STORAGE_KEY, {
-        schemaVersion: SCHEMA_VERSION,
-        updatedAt: updatedAtRef.current || Date.now(),
-        data: state,
-      })
-      return
-    }
     const at = Date.now()
     updatedAtRef.current = at
-    touchPersisted(STORAGE_KEY, {
-      schemaVersion: SCHEMA_VERSION,
-      updatedAt: at,
-      data: state,
-    })
-    scheduleCloudSave('treino', state, at)
+    touchPersisted(STORAGE_KEY, state, at)
+    if (hydratedRef.current) scheduleCloudSave('treino', state, at)
   }, [state])
 
   useEffect(() => {
     const flush = () => {
+      const at = updatedAtRef.current || Date.now()
+      touchPersisted(STORAGE_KEY, stateRef.current, at)
       if (!hydratedRef.current) return
-      void flushCloudSave('treino', stateRef.current, updatedAtRef.current)
+      void flushCloudSave('treino', stateRef.current, at)
+    }
+    const onOnline = () => {
+      window.setTimeout(flush, 400)
     }
     window.addEventListener('pagehide', flush)
-    window.addEventListener('online', flush)
+    window.addEventListener('online', onOnline)
     return () => {
       window.removeEventListener('pagehide', flush)
-      window.removeEventListener('online', flush)
+      window.removeEventListener('online', onOnline)
     }
   }, [])
 
@@ -493,6 +497,13 @@ export function useTreino() {
     }))
   }, [])
 
+  const setRestTimerEnabled = useCallback((restTimerEnabled: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, restTimerEnabled },
+    }))
+  }, [])
+
   const updateTemplate = useCallback(
     (
       templateId: string,
@@ -501,6 +512,7 @@ export function useTreino() {
       setState((prev) => ({
         ...prev,
         activePresetId: null,
+        activeSavedPlanId: null,
         plan: prev.plan.map((t) =>
           t.id === templateId ? { ...t, ...patch } : t,
         ),
@@ -509,11 +521,28 @@ export function useTreino() {
     [],
   )
 
-  const addTemplate = useCallback((dayOfWeek = 1) => {
+  const addTemplate = useCallback(
+    (dayOfWeek = 1, starter: WorkoutStarterId = 'custom') => {
+      setState((prev) => {
+        if (prev.plan.some((t) => t.dayOfWeek === dayOfWeek)) return prev
+        return {
+          ...prev,
+          activePresetId: null,
+          activeSavedPlanId: null,
+          plan: [...prev.plan, buildWorkoutTemplate(dayOfWeek, starter)],
+        }
+      })
+    },
+    [],
+  )
+
+  const startBlankCustomPlan = useCallback(() => {
     setState((prev) => ({
       ...prev,
+      plan: [],
       activePresetId: null,
-      plan: [...prev.plan, blankTemplate(dayOfWeek)],
+      activeSavedPlanId: null,
+      active: null,
     }))
   }, [])
 
@@ -521,6 +550,7 @@ export function useTreino() {
     setState((prev) => ({
       ...prev,
       activePresetId: null,
+        activeSavedPlanId: null,
       plan: prev.plan.filter((t) => t.id !== templateId),
     }))
   }, [])
@@ -529,6 +559,7 @@ export function useTreino() {
     setState((prev) => ({
       ...prev,
       activePresetId: null,
+        activeSavedPlanId: null,
       plan: prev.plan.map((t) =>
         t.id === templateId
           ? { ...t, exercises: [...t.exercises, blankExercise()] }
@@ -546,6 +577,7 @@ export function useTreino() {
       setState((prev) => ({
         ...prev,
         activePresetId: null,
+        activeSavedPlanId: null,
         plan: prev.plan.map((t) =>
           t.id !== templateId
             ? t
@@ -565,6 +597,7 @@ export function useTreino() {
     setState((prev) => ({
       ...prev,
       activePresetId: null,
+        activeSavedPlanId: null,
       plan: prev.plan.map((t) =>
         t.id !== templateId
           ? t
@@ -580,6 +613,7 @@ export function useTreino() {
     setState((prev) => ({
       ...prev,
       activePresetId: null,
+        activeSavedPlanId: null,
       plan: prev.plan.map((t) =>
         t.id !== templateId
           ? t
@@ -603,6 +637,7 @@ export function useTreino() {
       setState((prev) => ({
         ...prev,
         activePresetId: null,
+        activeSavedPlanId: null,
         plan: prev.plan.map((t) =>
           t.id !== templateId
             ? t
@@ -633,6 +668,7 @@ export function useTreino() {
       setState((prev) => ({
         ...prev,
         activePresetId: null,
+        activeSavedPlanId: null,
         plan: prev.plan.map((t) =>
           t.id !== templateId
             ? t
@@ -659,8 +695,25 @@ export function useTreino() {
       ...prev,
       plan: clonePlan(WEEKLY_PLAN),
       activePresetId: 'ppl-classic',
+      activeSavedPlanId: null,
     }))
   }, [])
+
+  const restorePlanEdit = useCallback(
+    (snapshot: {
+      plan: WorkoutTemplate[]
+      activePresetId: string | null
+      activeSavedPlanId: string | null
+    }) => {
+      setState((prev) => ({
+        ...prev,
+        plan: clonePlan(snapshot.plan),
+        activePresetId: snapshot.activePresetId,
+        activeSavedPlanId: snapshot.activeSavedPlanId,
+      }))
+    },
+    [],
+  )
 
   const applyPreset = useCallback((presetId: string) => {
     const preset = getPresetById(presetId)
@@ -669,8 +722,90 @@ export function useTreino() {
       ...prev,
       plan: clonePresetPlan(preset),
       activePresetId: preset.id,
+        activeSavedPlanId: null,
       active: null,
     }))
+  }, [])
+
+  const saveCurrentPlan = useCallback((name: string, tagline = '') => {
+    const trimmed = name.trim()
+    if (!trimmed) return null
+    const id = makeId('saved')
+    let createdId: string | null = id
+    setState((prev) => {
+      if (prev.plan.length === 0) {
+        createdId = null
+        return prev
+      }
+      const entry: SavedCustomPlan = {
+        id,
+        name: trimmed,
+        tagline: tagline.trim() || `${prev.plan.length} dias · personalizado`,
+        savedAt: new Date().toISOString(),
+        templates: clonePlan(prev.plan),
+      }
+      return {
+        ...prev,
+        activePresetId: null,
+        activeSavedPlanId: id,
+        savedPlans: [entry, ...(prev.savedPlans ?? [])],
+      }
+    })
+    return createdId
+  }, [])
+
+  const applySavedPlan = useCallback((planId: string) => {
+    setState((prev) => {
+      const found = (prev.savedPlans ?? []).find((p) => p.id === planId)
+      if (!found) return prev
+      return {
+        ...prev,
+        plan: clonePlan(found.templates),
+        activePresetId: null,
+        activeSavedPlanId: found.id,
+        active: null,
+      }
+    })
+  }, [])
+
+  const removeSavedPlan = useCallback((planId: string) => {
+    setState((prev) => ({
+      ...prev,
+      activeSavedPlanId:
+        prev.activeSavedPlanId === planId ? null : prev.activeSavedPlanId,
+      savedPlans: (prev.savedPlans ?? []).filter((p) => p.id !== planId),
+    }))
+  }, [])
+
+  const renameSavedPlan = useCallback((planId: string, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setState((prev) => ({
+      ...prev,
+      savedPlans: (prev.savedPlans ?? []).map((p) =>
+        p.id === planId ? { ...p, name: trimmed } : p,
+      ),
+    }))
+  }, [])
+
+  const updateSavedPlanFromCurrent = useCallback((planId: string) => {
+    setState((prev) => {
+      if (prev.plan.length === 0) return prev
+      return {
+        ...prev,
+        activePresetId: null,
+        activeSavedPlanId: planId,
+        savedPlans: (prev.savedPlans ?? []).map((p) =>
+          p.id === planId
+            ? {
+                ...p,
+                templates: clonePlan(prev.plan),
+                savedAt: new Date().toISOString(),
+              }
+            : p,
+        ),
+      }
+    })
   }, [])
 
   const stats = useMemo(() => {
@@ -728,8 +863,10 @@ export function useTreino() {
     suggestionFor,
     completeWorkout,
     setRestSeconds,
+    setRestTimerEnabled,
     updateTemplate,
     addTemplate,
+    startBlankCustomPlan,
     removeTemplate,
     addExercise,
     updateExercise,
@@ -738,7 +875,13 @@ export function useTreino() {
     removeTemplateSet,
     updateTemplateSet,
     resetPlan,
+    restorePlanEdit,
     applyPreset,
+    saveCurrentPlan,
+    applySavedPlan,
+    removeSavedPlan,
+    renameSavedPlan,
+    updateSavedPlanFromCurrent,
     stats,
   }
 }

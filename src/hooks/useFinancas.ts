@@ -6,7 +6,6 @@ import {
   hydrateFromCloud,
   scheduleCloudSave,
 } from '../lib/cloudSync'
-import { SCHEMA_VERSION } from '../lib/dataVersion'
 import { loadFinancasPersisted, touchPersisted } from '../lib/persist'
 import { uid as makeId } from '../lib/storage'
 import { useAuth } from './useAuth'
@@ -49,16 +48,29 @@ export function useFinancas() {
     let cancelled = false
     hydratedRef.current = false
     ;(async () => {
-      const local = loadFinancasPersisted(STORAGE_KEY, emptyFinancasState)
+      const localAtStart = loadFinancasPersisted(STORAGE_KEY, emptyFinancasState)
       const next = await hydrateFromCloud(
         'financas',
-        local,
+        localAtStart,
         (d) => d.transactions.length === 0 && d.goals.length === 0,
       )
       if (cancelled) return
-      setState(next.data)
-      updatedAtRef.current = next.updatedAt
-      touchPersisted(STORAGE_KEY, next)
+      const latestLocal = loadFinancasPersisted(STORAGE_KEY, emptyFinancasState)
+      let finalDoc = next
+      if (
+        latestLocal.updatedAt > localAtStart.updatedAt &&
+        latestLocal.updatedAt >= next.updatedAt
+      ) {
+        finalDoc = await hydrateFromCloud(
+          'financas',
+          latestLocal,
+          (d) => d.transactions.length === 0 && d.goals.length === 0,
+        )
+      }
+      if (cancelled) return
+      setState(finalDoc.data)
+      updatedAtRef.current = finalDoc.updatedAt
+      touchPersisted(STORAGE_KEY, finalDoc.data, finalDoc.updatedAt)
       hydratedRef.current = true
     })()
     return () => {
@@ -67,26 +79,27 @@ export function useFinancas() {
   }, [uid, authReady])
 
   useEffect(() => {
-    const at = hydratedRef.current ? Date.now() : updatedAtRef.current || Date.now()
-    if (hydratedRef.current) updatedAtRef.current = at
-    touchPersisted(STORAGE_KEY, {
-      schemaVersion: SCHEMA_VERSION,
-      updatedAt: at,
-      data: state,
-    })
+    const at = Date.now()
+    updatedAtRef.current = at
+    touchPersisted(STORAGE_KEY, state, at)
     if (hydratedRef.current) scheduleCloudSave('financas', state, at)
   }, [state])
 
   useEffect(() => {
     const flush = () => {
+      const at = updatedAtRef.current || Date.now()
+      touchPersisted(STORAGE_KEY, stateRef.current, at)
       if (!hydratedRef.current) return
-      void flushCloudSave('financas', stateRef.current, updatedAtRef.current)
+      void flushCloudSave('financas', stateRef.current, at)
+    }
+    const onOnline = () => {
+      window.setTimeout(flush, 400)
     }
     window.addEventListener('pagehide', flush)
-    window.addEventListener('online', flush)
+    window.addEventListener('online', onOnline)
     return () => {
       window.removeEventListener('pagehide', flush)
-      window.removeEventListener('online', flush)
+      window.removeEventListener('online', onOnline)
     }
   }, [])
 

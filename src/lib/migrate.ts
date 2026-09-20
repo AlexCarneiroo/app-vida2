@@ -1,4 +1,4 @@
-import { emptyHabitosState } from '../data/habitosDefaults'
+import { emptyHabitosState, normalizeHabit } from '../data/habitosDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
 import { normalizeExerciseName } from './treinoStats'
 import {
@@ -13,12 +13,17 @@ import type { RotinaState, RoutineBlock } from '../types/rotina'
 import type {
   ActiveWorkout,
   Exercise,
+  SavedCustomPlan,
   TreinoSettings,
   TreinoState,
   WorkoutTemplate,
 } from '../types/treino'
 
-const defaultSettings: TreinoSettings = { restSeconds: 90 }
+const defaultSettings: TreinoSettings = {
+  restSeconds: 90,
+  restTimerEnabled: true,
+}
+
 
 function ensureSourceId<T extends { id: string; sourceId?: string; name: string }>(
   ex: T,
@@ -49,6 +54,15 @@ export function normalizeTreino(raw: unknown): TreinoState {
       }
     : null
   const plan = asArray<WorkoutTemplate>(parsed.plan)
+  const savedPlans = asArray<SavedCustomPlan>(parsed.savedPlans)
+    .filter((p) => p && typeof p.id === 'string' && Array.isArray(p.templates))
+    .map((p) => ({
+      id: p.id,
+      name: (p.name || 'Plano guardado').trim() || 'Plano guardado',
+      tagline: (p.tagline || '').trim(),
+      savedAt: p.savedAt || new Date().toISOString(),
+      templates: asArray<WorkoutTemplate>(p.templates),
+    }))
 
   return {
     plan: plan.length > 0 ? plan : [],
@@ -67,9 +81,16 @@ export function normalizeTreino(raw: unknown): TreinoState {
         parsed.settings?.restSeconds === 120
           ? parsed.settings.restSeconds
           : defaultSettings.restSeconds,
+      restTimerEnabled:
+        typeof parsed.settings?.restTimerEnabled === 'boolean'
+          ? parsed.settings.restTimerEnabled
+          : defaultSettings.restTimerEnabled,
     },
     activePresetId:
       parsed.activePresetId === undefined ? null : parsed.activePresetId,
+    activeSavedPlanId:
+      parsed.activeSavedPlanId === undefined ? null : parsed.activeSavedPlanId,
+    savedPlans,
   }
 }
 
@@ -237,6 +258,14 @@ export function mergeTreinoSafe(
     ),
     weekDone,
     settings: { ...secondary.settings, ...primary.settings },
+    savedPlans: (() => {
+      const map = new Map<string, SavedCustomPlan>()
+      for (const p of secondary.savedPlans ?? []) map.set(p.id, p)
+      for (const p of primary.savedPlans ?? []) map.set(p.id, p)
+      return [...map.values()].sort((a, b) =>
+        b.savedAt.localeCompare(a.savedAt),
+      )
+    })(),
   })
 }
 
@@ -244,19 +273,19 @@ export function normalizeHabitos(raw: unknown): HabitosState {
   const parsed = (raw && typeof raw === 'object' ? raw : {}) as Partial<HabitosState>
   const habits = asArray<Habit>(parsed.habits)
     .filter((h) => h && typeof h.id === 'string')
-    .map((h) => ({
-      id: h.id,
-      name: h.name?.trim() || 'Hábito',
-      detail: h.detail ?? '',
-      streak: Math.max(0, Number(h.streak) || 0),
-      doneToday: Boolean(h.doneToday),
-      lastDoneDateKey: h.lastDoneDateKey ?? null,
-      createdAt: h.createdAt || new Date().toISOString(),
-    }))
+    .map((h) => normalizeHabit(h))
   const base = emptyHabitosState()
+  const dayLogRaw =
+    parsed.dayLog && typeof parsed.dayLog === 'object' ? parsed.dayLog : {}
+  const dayLog: Record<string, number> = {}
+  for (const [k, v] of Object.entries(dayLogRaw)) {
+    const n = Number(v)
+    if (n > 0) dayLog[k] = n
+  }
   return {
     dayKey: parsed.dayKey || base.dayKey,
     habits,
+    dayLog,
   }
 }
 
@@ -273,9 +302,17 @@ export function normalizeRotina(raw: unknown): RotinaState {
     }))
     .sort((a, b) => a.time.localeCompare(b.time))
   const base = emptyRotinaState()
+  const dayLogRaw =
+    parsed.dayLog && typeof parsed.dayLog === 'object' ? parsed.dayLog : {}
+  const dayLog: Record<string, number> = {}
+  for (const [k, v] of Object.entries(dayLogRaw)) {
+    const n = Number(v)
+    if (n > 0) dayLog[k] = n
+  }
   return {
     dayKey: parsed.dayKey || base.dayKey,
     blocks,
+    dayLog,
   }
 }
 
@@ -284,23 +321,42 @@ function migrateEnvelope<T>(
   normalize: (raw: unknown) => T,
   looksLikeData: (obj: object) => boolean,
 ): PersistedDoc<T> {
-  if (isPersistedDoc(input)) {
+  // Corrige gravações antigas com double-wrap
+  let cur: unknown = input
+  for (let i = 0; i < 4; i++) {
+    if (
+      isPersistedDoc(cur) &&
+      cur.data &&
+      typeof cur.data === 'object' &&
+      isPersistedDoc(cur.data)
+    ) {
+      cur = {
+        schemaVersion: SCHEMA_VERSION,
+        updatedAt: Math.max(cur.updatedAt || 0, cur.data.updatedAt || 0),
+        data: cur.data.data,
+      }
+      continue
+    }
+    break
+  }
+
+  if (isPersistedDoc(cur)) {
     return {
       schemaVersion: SCHEMA_VERSION,
       updatedAt:
-        typeof input.updatedAt === 'number' && input.updatedAt > 0
-          ? input.updatedAt
+        typeof cur.updatedAt === 'number' && cur.updatedAt > 0
+          ? cur.updatedAt
           : Date.now(),
-      data: normalize(input.data),
+      data: normalize(cur.data),
     }
   }
   if (
-    input &&
-    typeof input === 'object' &&
-    'data' in input &&
-    !looksLikeData(input)
+    cur &&
+    typeof cur === 'object' &&
+    'data' in cur &&
+    !looksLikeData(cur)
   ) {
-    const env = input as { data: unknown; updatedAt?: number }
+    const env = cur as { data: unknown; updatedAt?: number }
     return {
       schemaVersion: SCHEMA_VERSION,
       updatedAt:
@@ -310,7 +366,7 @@ function migrateEnvelope<T>(
       data: normalize(env.data),
     }
   }
-  return wrapDoc(normalize(input))
+  return wrapDoc(normalize(cur))
 }
 
 export function migrateHabitosDoc(input: unknown): PersistedDoc<HabitosState> {
@@ -335,10 +391,10 @@ export function mergeHabitosSafe(
   preferRemote: boolean,
 ): HabitosState {
   const map = new Map<string, Habit>()
-  const first = preferRemote ? remote.habits : local.habits
-  const second = preferRemote ? local.habits : remote.habits
-  for (const h of first) map.set(h.id, h)
-  for (const h of second) {
+  const primary = preferRemote ? remote.habits : local.habits
+  const secondary = preferRemote ? local.habits : remote.habits
+  for (const h of secondary) map.set(h.id, h)
+  for (const h of primary) {
     const prev = map.get(h.id)
     if (!prev) {
       map.set(h.id, h)
@@ -349,16 +405,23 @@ export function mergeHabitosSafe(
       ...h,
       streak: Math.max(prev.streak, h.streak),
       doneToday: prev.doneToday || h.doneToday,
-      lastDoneDateKey: preferRemote
-        ? h.lastDoneDateKey ?? prev.lastDoneDateKey
-        : prev.lastDoneDateKey ?? h.lastDoneDateKey,
+      lastDoneDateKey: h.lastDoneDateKey ?? prev.lastDoneDateKey,
     })
   }
+
+  const dayLog: Record<string, number> = {
+    ...(local.dayLog ?? {}),
+  }
+  for (const [k, v] of Object.entries(remote.dayLog ?? {})) {
+    dayLog[k] = Math.max(dayLog[k] ?? 0, v)
+  }
+
   return {
     dayKey: preferRemote
       ? remote.dayKey || local.dayKey
       : local.dayKey || remote.dayKey,
     habits: [...map.values()],
+    dayLog,
   }
 }
 
@@ -368,14 +431,34 @@ export function mergeRotinaSafe(
   preferRemote: boolean,
 ): RotinaState {
   const map = new Map<string, RoutineBlock>()
-  const first = preferRemote ? remote.blocks : local.blocks
-  const second = preferRemote ? local.blocks : remote.blocks
-  for (const b of first) map.set(b.id, b)
-  for (const b of second) {
-    if (!map.has(b.id)) map.set(b.id, b)
+  const primary = preferRemote ? remote.blocks : local.blocks
+  const secondary = preferRemote ? local.blocks : remote.blocks
+  for (const b of secondary) map.set(b.id, b)
+  for (const b of primary) {
+    const prev = map.get(b.id)
+    if (!prev) {
+      map.set(b.id, b)
+      continue
+    }
+    map.set(b.id, {
+      ...prev,
+      ...b,
+      doneToday: prev.doneToday || b.doneToday,
+    })
   }
+
+  const dayLog: Record<string, number> = {
+    ...(local.dayLog ?? {}),
+  }
+  for (const [k, v] of Object.entries(remote.dayLog ?? {})) {
+    dayLog[k] = Math.max(dayLog[k] ?? 0, v)
+  }
+
   return {
-    dayKey: preferRemote ? remote.dayKey || local.dayKey : local.dayKey || remote.dayKey,
+    dayKey: preferRemote
+      ? remote.dayKey || local.dayKey
+      : local.dayKey || remote.dayKey,
     blocks: [...map.values()].sort((a, b) => a.time.localeCompare(b.time)),
+    dayLog,
   }
 }

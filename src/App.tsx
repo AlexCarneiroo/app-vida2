@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion'
 import { AppShell } from './components/layout/AppShell'
 import { FeedbackProvider } from './components/ui/Feedback'
 import { AuthProvider } from './hooks/useAuth'
+import { ThemeProvider } from './hooks/useTheme'
 import { HomePage } from './pages/HomePage'
 import { TreinoPage } from './pages/TreinoPage'
 import { FinancasPage } from './pages/FinancasPage'
@@ -33,11 +34,13 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <FeedbackProvider>
-        <AuthProvider>
-          <AnimatedRoutes />
-        </AuthProvider>
-      </FeedbackProvider>
+      <ThemeProvider>
+        <FeedbackProvider>
+          <AuthProvider>
+            <AnimatedRoutes />
+          </AuthProvider>
+        </FeedbackProvider>
+      </ThemeProvider>
     </BrowserRouter>
   )
 }

@@ -275,6 +275,7 @@ export async function hydrateFromCloud<T extends AppModuleState>(
   }
 
   const cloudTyped = cloud as PersistedDoc<T>
+  // Offline-first: se o local for mais recente ou igual, não deixar a nuvem apagar
   const preferRemote = cloudTyped.updatedAt > localDoc.updatedAt
 
   let mergedData: T
@@ -308,7 +309,11 @@ export async function hydrateFromCloud<T extends AppModuleState>(
       ) as T
   }
 
-  const mergedAt = Math.max(localDoc.updatedAt, cloudTyped.updatedAt)
+  const mergedAt = Math.max(
+    localDoc.updatedAt || 0,
+    cloudTyped.updatedAt || 0,
+    Date.now(),
+  )
   const merged: PersistedDoc<T> = {
     schemaVersion: SCHEMA_VERSION,
     updatedAt: mergedAt,
@@ -321,9 +326,16 @@ export async function hydrateFromCloud<T extends AppModuleState>(
 
   const remoteJson = JSON.stringify(cloudTyped.data)
   const mergedJson = JSON.stringify(mergedData)
-  if (mergedJson !== remoteJson && !isEmpty(mergedData)) {
-    await pushCloudDoc(collection, mergedData, Date.now())
-    return { ...merged, updatedAt: Date.now() }
+  const localJson = JSON.stringify(localDoc.data)
+
+  // Se o local trouxe algo que a nuvem não tem, ou merge ≠ remote → sobe
+  if (
+    (mergedJson !== remoteJson || localJson !== remoteJson) &&
+    !isEmpty(mergedData)
+  ) {
+    const pushAt = Math.max(mergedAt, Date.now())
+    await pushCloudDoc(collection, mergedData, pushAt)
+    return { ...merged, updatedAt: pushAt }
   }
 
   return merged

@@ -6,7 +6,10 @@ import {
   staggerContainer,
   staggerItem,
 } from '../components/ui/PageTransition'
+import { Button } from '../components/ui/Button'
+import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { useConfirm, useToast } from '../components/ui/Feedback'
+import { useBusyAction } from '../hooks/useBusyAction'
 import { useRotina } from '../hooks/useRotina'
 
 export function RotinaPage() {
@@ -14,12 +17,15 @@ export function RotinaPage() {
     blocks,
     doneCount,
     total,
+    dayLog,
     toggleBlock,
     addBlock,
     removeBlock,
   } = useRotina()
   const { toast } = useToast()
   const { confirm } = useConfirm()
+  const { busy: saving, run: runSave } = useBusyAction()
+  const [removingId, setRemovingId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [time, setTime] = useState('08:00')
   const [title, setTitle] = useState('')
@@ -28,11 +34,13 @@ export function RotinaPage() {
   function handleAdd(e: FormEvent) {
     e.preventDefault()
     if (!title.trim()) return
-    addBlock(time, title, detail)
-    setTitle('')
-    setDetail('')
-    setShowForm(false)
-    toast('Bloco adicionado', 'ok')
+    void runSave(() => {
+      addBlock(time, title, detail)
+      setTitle('')
+      setDetail('')
+      setShowForm(false)
+      toast('Bloco adicionado', 'ok')
+    })
   }
 
   async function handleRemove(id: string, label: string) {
@@ -42,8 +50,13 @@ export function RotinaPage() {
       confirmLabel: 'Excluir',
     })
     if (!ok) return
-    removeBlock(id)
-    toast('Bloco excluído', 'info')
+    setRemovingId(id)
+    try {
+      removeBlock(id)
+      toast('Bloco excluído', 'info')
+    } finally {
+      setRemovingId(null)
+    }
   }
 
   return (
@@ -56,14 +69,14 @@ export function RotinaPage() {
             Blocos do dia com hora. Estrutura pronta para evoluir depois.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn--primary"
+        <Button
+          variant="primary"
+          icon={<Plus size={16} />}
           onClick={() => setShowForm((v) => !v)}
+          disabled={saving}
         >
-          <Plus size={16} />
           {showForm ? 'Fechar' : 'Novo'}
-        </button>
+        </Button>
       </header>
 
       <div className="surface module-stat">
@@ -84,6 +97,8 @@ export function RotinaPage() {
         </div>
       </div>
 
+      <ActivityHeatmap log={dayLog} title="Rotina no ano" />
+
       {showForm && (
         <form className="surface config-form" onSubmit={handleAdd}>
           <div className="finance-form__grid">
@@ -94,6 +109,7 @@ export function RotinaPage() {
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
                 required
+                disabled={saving}
               />
             </label>
             <label className="plan-field plan-field--grow">
@@ -104,6 +120,7 @@ export function RotinaPage() {
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Ex.: Bloco profundo"
                 required
+                disabled={saving}
               />
             </label>
             <label className="plan-field plan-field--grow">
@@ -113,13 +130,19 @@ export function RotinaPage() {
                 value={detail}
                 onChange={(e) => setDetail(e.target.value)}
                 placeholder="Ex.: 90 min sem notificações"
+                disabled={saving}
               />
             </label>
           </div>
-          <button type="submit" className="btn btn--primary">
-            <Plus size={16} />
+          <Button
+            type="submit"
+            variant="primary"
+            icon={<Plus size={16} />}
+            loading={saving}
+            loadingLabel="A guardar…"
+          >
             Guardar bloco
-          </button>
+          </Button>
         </form>
       )}
 
@@ -167,14 +190,15 @@ export function RotinaPage() {
                 <strong>{b.title}</strong>
                 <span>{b.detail || (b.doneToday ? 'Feito' : 'Pendente')}</span>
               </div>
-              <button
-                type="button"
-                className="btn btn--ghost finance-row__del"
+              <Button
+                variant="ghost"
+                className="finance-row__del"
+                icon={<Trash2 size={14} />}
+                loading={removingId === b.id}
                 onClick={() => handleRemove(b.id, b.title)}
                 title="Excluir"
-              >
-                <Trash2 size={14} />
-              </button>
+                aria-label={`Excluir ${b.title}`}
+              />
             </motion.div>
           ))}
         </motion.div>

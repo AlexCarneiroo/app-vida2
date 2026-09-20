@@ -9,4 +9,6 @@ export type RoutineBlock = {
 export type RotinaState = {
   dayKey: string
   blocks: RoutineBlock[]
+  /** contagem de blocos concluídos por dia YYYY-MM-DD */
+  dayLog: Record<string, number>
 }

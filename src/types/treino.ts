@@ -94,6 +94,17 @@ export type WorkoutSummary = {
 
 export type TreinoSettings = {
   restSeconds: 60 | 90 | 120
+  /** Se false, não mostra o contador após cada série */
+  restTimerEnabled: boolean
+}
+
+/** Plano semanal criado/guardado pelo utilizador */
+export type SavedCustomPlan = {
+  id: string
+  name: string
+  tagline: string
+  savedAt: string
+  templates: WorkoutTemplate[]
 }
 
 export type TreinoState = {
@@ -102,8 +113,12 @@ export type TreinoState = {
   history: ActiveWorkout[]
   weekDone: Record<string, string> // dateKey -> templateId
   settings: TreinoSettings
-  /** id do preset aplicado (null = plano personalizado) */
+  /** id do preset catalogado (null = personalizado / saved) */
   activePresetId: string | null
+  /** id do plano guardado ativo, se aplicável */
+  activeSavedPlanId: string | null
+  /** planos semanais personalizados guardados */
+  savedPlans: SavedCustomPlan[]
 }
 
 export type LoadSuggestion = {

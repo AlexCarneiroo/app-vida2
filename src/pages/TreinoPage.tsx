@@ -24,6 +24,8 @@ import { PlanPresets } from '../components/treino/PlanPresets'
 import { ProgressionPanel } from '../components/treino/ProgressionPanel'
 import { RestTimer } from '../components/treino/RestTimer'
 import { WorkoutSummaryCard } from '../components/treino/WorkoutSummaryCard'
+import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
+import { Button } from '../components/ui/Button'
 import {
   PageTransition,
   staggerContainer,
@@ -31,8 +33,10 @@ import {
 } from '../components/ui/PageTransition'
 import { ProgressRing } from '../components/ui/ProgressRing'
 import { useConfirm, useToast } from '../components/ui/Feedback'
+import { useBusyAction } from '../hooks/useBusyAction'
 import { getPresetById } from '../data/planPresets'
-import { DAY_LABELS, DAY_NAMES } from '../data/treinoDefaults'
+import { DAY_LABELS, DAY_NAMES, clonePlan } from '../data/treinoDefaults'
+import { treinoDayLog } from '../lib/activityHeatmap'
 import { useTreino } from '../hooks/useTreino'
 import { dateKey, formatKg, weekDates } from '../lib/date'
 import { workoutSetsDone, workoutVolume } from '../lib/treinoStats'
@@ -67,6 +71,7 @@ export function TreinoPage() {
     suggestionFor,
     completeWorkout,
     setRestSeconds,
+    setRestTimerEnabled,
     updateTemplate,
     addTemplate,
     removeTemplate,
@@ -77,25 +82,45 @@ export function TreinoPage() {
     removeTemplateSet,
     updateTemplateSet,
     resetPlan,
+    restorePlanEdit,
+    startBlankCustomPlan,
     applyPreset,
+    saveCurrentPlan,
+    applySavedPlan,
+    removeSavedPlan,
+    updateSavedPlanFromCurrent,
     stats,
   } = useTreino()
 
   const { toast } = useToast()
   const { confirm } = useConfirm()
+  const { busy: completing, run: runComplete } = useBusyAction()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [rest, setRest] = useState<{ key: number; seconds: number } | null>(
     null,
   )
   const [idleView, setIdleView] = useState<IdleView>('plan')
+  const [editSnapshot, setEditSnapshot] = useState<{
+    plan: WorkoutTemplate[]
+    activePresetId: string | null
+    activeSavedPlanId: string | null
+  } | null>(null)
   const [selectedDayKey, setSelectedDayKey] = useState<string>(() => dateKey())
   const days = useMemo(() => weekDates(), [])
 
   const active = state.active
   const restSeconds = state.settings.restSeconds
+  const restTimerEnabled = state.settings.restTimerEnabled
+  const treinoLog = useMemo(
+    () => treinoDayLog(state.history),
+    [state.history],
+  )
   const todayDow = new Date().getDay()
   const currentPreset = state.activePresetId
     ? getPresetById(state.activePresetId)
+    : null
+  const currentSavedPlan = state.activeSavedPlanId
+    ? (state.savedPlans ?? []).find((p) => p.id === state.activeSavedPlanId)
     : null
 
   const selectedDay = useMemo(
@@ -151,7 +176,9 @@ export function TreinoPage() {
   function handleToggleSet(exercise: Exercise, setId: string, wasDone: boolean) {
     toggleSet(exercise.id, setId)
     if (!wasDone) {
-      setRest({ key: Date.now(), seconds: restSeconds })
+      if (restTimerEnabled) {
+        setRest({ key: Date.now(), seconds: restSeconds })
+      }
       setExpanded(exercise.id)
     }
   }
@@ -162,6 +189,37 @@ export function TreinoPage() {
     setRest(null)
     startWorkout(template)
     toast('Treino iniciado', 'ok')
+  }
+
+  function openEditor() {
+    setEditSnapshot({
+      plan: clonePlan(plan),
+      activePresetId: state.activePresetId,
+      activeSavedPlanId: state.activeSavedPlanId,
+    })
+    setIdleView('edit')
+  }
+
+  function openCustomPlanBuilder() {
+    setEditSnapshot({
+      plan: clonePlan(plan),
+      activePresetId: state.activePresetId,
+      activeSavedPlanId: state.activeSavedPlanId,
+    })
+    startBlankCustomPlan()
+    setIdleView('edit')
+    toast('Monta os teus dias — escolhe o tipo de treino em cada um', 'info')
+  }
+
+  function handleEditorDone() {
+    setEditSnapshot(null)
+    setIdleView('plan')
+  }
+
+  function handleEditorCancel() {
+    if (editSnapshot) restorePlanEdit(editSnapshot)
+    setEditSnapshot(null)
+    setIdleView('plan')
   }
 
   async function handleDiscard() {
@@ -176,8 +234,10 @@ export function TreinoPage() {
   }
 
   function handleComplete() {
-    completeWorkout()
-    toast('Treino concluído', 'ok')
+    void runComplete(() => {
+      completeWorkout()
+      toast('Treino concluído', 'ok')
+    })
   }
 
   async function handleRemoveActiveSet(exerciseId: string, setId: string) {
@@ -253,6 +313,8 @@ export function TreinoPage() {
         />
       </motion.div>
 
+      <ActivityHeatmap log={treinoLog} title="Treinos no ano" />
+
       <AnimatePresence>
         {lastSummary && !active && (
           <div className="workout-summary-wrap">
@@ -292,27 +354,43 @@ export function TreinoPage() {
                   <X size={16} />
                   Descartar
                 </button>
-                <button
-                  type="button"
-                  className="btn btn--primary"
+                <Button
+                  variant="primary"
+                  icon={<Check size={16} />}
                   onClick={handleComplete}
                   disabled={stats.doneSets === 0}
+                  loading={completing}
+                  loadingLabel="A concluir…"
                 >
-                  <Check size={16} />
                   Concluir
-                </button>
+                </Button>
               </div>
             </div>
 
             <div className="rest-prefs">
               <span>Descanso</span>
               <div className="rest-prefs__btns">
+                <button
+                  type="button"
+                  className={`rest-prefs__btn is-off${!restTimerEnabled ? ' is-active' : ''}`}
+                  onClick={() => {
+                    setRestTimerEnabled(false)
+                    setRest(null)
+                  }}
+                  aria-pressed={!restTimerEnabled}
+                >
+                  Off
+                </button>
                 {REST_PRESETS.map((sec) => (
                   <button
                     key={sec}
                     type="button"
-                    className={`rest-prefs__btn${restSeconds === sec ? ' is-active' : ''}`}
-                    onClick={() => setRestSeconds(sec)}
+                    className={`rest-prefs__btn${restTimerEnabled && restSeconds === sec ? ' is-active' : ''}`}
+                    onClick={() => {
+                      setRestTimerEnabled(true)
+                      setRestSeconds(sec)
+                    }}
+                    aria-pressed={restTimerEnabled && restSeconds === sec}
                   >
                     {sec}s
                   </button>
@@ -483,6 +561,7 @@ export function TreinoPage() {
                 </div>
                 <PlanEditor
                   plan={plan}
+                  activeSavedPlanId={state.activeSavedPlanId}
                   onUpdateTemplate={updateTemplate}
                   onAddTemplate={addTemplate}
                   onRemoveTemplate={removeTemplate}
@@ -493,21 +572,29 @@ export function TreinoPage() {
                   onRemoveSet={removeTemplateSet}
                   onUpdateSet={updateTemplateSet}
                   onReset={resetPlan}
-                  onDone={() => setIdleView('plan')}
+                  onSavePlan={saveCurrentPlan}
+                  onUpdateSavedPlan={updateSavedPlanFromCurrent}
+                  onDone={handleEditorDone}
+                  onCancel={handleEditorCancel}
                 />
               </>
             ) : idleView === 'presets' ? (
               <>
                 <div className="section-label">
-                  <h2>Planos prontos</h2>
-                  <span>Por objetivo</span>
+                  <h2>Planos</h2>
+                  <span>Prontos e guardados</span>
                 </div>
                 <PlanPresets
                   activePresetId={state.activePresetId}
+                  activeSavedPlanId={state.activeSavedPlanId}
+                  savedPlans={state.savedPlans ?? []}
                   onApply={(id) => {
                     applyPreset(id)
                     toast('Plano aplicado', 'ok')
                   }}
+                  onApplySaved={applySavedPlan}
+                  onRemoveSaved={removeSavedPlan}
+                  onCreateCustom={openCustomPlanBuilder}
                   onDone={() => setIdleView('plan')}
                 />
               </>
@@ -573,7 +660,7 @@ export function TreinoPage() {
                     <button
                       type="button"
                       className="btn btn--ghost"
-                      onClick={() => setIdleView('edit')}
+                      onClick={openEditor}
                     >
                       <Pencil size={15} />
                       Editar
@@ -582,11 +669,13 @@ export function TreinoPage() {
                 </div>
 
                 <p className="treino-plan-hint">
-                  {currentPreset
-                    ? `Plano atual: ${currentPreset.name}. `
-                    : 'Plano personalizado. '}
-                  Usa <em>Planos</em> para trocar por objetivo, ou{' '}
-                  <em>Editar</em> para ajustar dia a dia.
+                  {currentSavedPlan
+                    ? `Plano atual: ${currentSavedPlan.name} (teu). `
+                    : currentPreset
+                      ? `Plano atual: ${currentPreset.name}. `
+                      : 'Plano personalizado. '}
+                  Usa <em>Editar</em> para montar e <em>Guardar plano</em>, ou{' '}
+                  <em>Planos</em> para trocar.
                 </p>
 
                 <motion.div
@@ -619,7 +708,8 @@ export function TreinoPage() {
                             <span
                               className="module-card__icon"
                               style={{
-                                background: 'rgba(45, 212, 168, 0.16)',
+                                background:
+                                  'color-mix(in srgb, var(--treino) 16%, transparent)',
                                 color: 'var(--treino)',
                               }}
                             >
@@ -651,6 +741,23 @@ export function TreinoPage() {
                         </motion.button>
                       )
                     })}
+
+                  <motion.button
+                    type="button"
+                    className="surface surface--interactive treino-plan-card treino-plan-card--add"
+                    variants={staggerItem}
+                    onClick={openEditor}
+                  >
+                    <span className="treino-plan-card__add-icon" aria-hidden>
+                      <Plus size={22} />
+                    </span>
+                    <strong className="treino-plan-card__title">
+                      Adicionar treino
+                    </strong>
+                    <span className="treino-plan-card__meta">
+                      Escolhe um dia livre ou o tipo que preferires
+                    </span>
+                  </motion.button>
                 </motion.div>
 
                 {state.history.length > 0 && (
@@ -694,7 +801,7 @@ export function TreinoPage() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {rest !== null && (
+        {restTimerEnabled && rest !== null && (
           <motion.div
             className="rest-timer-wrap"
             initial={{ y: 40, opacity: 0 }}
