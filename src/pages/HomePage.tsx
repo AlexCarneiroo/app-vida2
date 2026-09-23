@@ -22,6 +22,7 @@ import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
 import { useRotina } from '../hooks/useRotina'
 import { useTreino } from '../hooks/useTreino'
+import { coachLine, useMotivation } from '../hooks/useMotivation'
 import {
   financasDayLog,
   mergeDayLogs,
@@ -240,12 +241,15 @@ export function HomePage() {
     ],
   )
 
-  const heroLine =
-    dayTotal === 0
-      ? 'Escolhe por onde começar — os pilares acompanham o teu dia.'
-      : dayProgress >= 100
-        ? 'Dia fechado. Mantém o ritmo amanhã.'
-        : `${dayProgress}% do dia · ${Math.round(dayDone)} de ${dayTotal} feitos`
+  const quote = useMotivation()
+  const heroLine = coachLine({
+    hour: now.getHours(),
+    firstName,
+    dayProgress,
+    dayTotal,
+    habitPending: dueToday.some((h) => !h.doneToday && !h.skippedToday),
+    workoutPending: Boolean(todayTemplate && !isTodayDone && !state.active),
+  })
 
   const primaryTreinoLabel = state.active
     ? 'Continuar treino'
@@ -331,6 +335,12 @@ export function HomePage() {
           </span>
         )}
         <p className="home-hero__line">{heroLine}</p>
+        {quote && (
+          <blockquote className="home-hero__quote">
+            <p>“{quote.text}”</p>
+            <cite>{quote.author}</cite>
+          </blockquote>
+        )}
 
         {dayTotal === 0 ? (
           <div className="home-hero__starts">

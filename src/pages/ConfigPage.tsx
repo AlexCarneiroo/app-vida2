@@ -5,6 +5,7 @@ import {
   LogIn,
   LogOut,
   Mail,
+  Menu,
   Moon,
   Phone,
   Sun,
@@ -16,7 +17,9 @@ import { Button } from '../components/ui/Button'
 import { PageTransition } from '../components/ui/PageTransition'
 import { useAuth } from '../hooks/useAuth'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { useNavPrefs } from '../hooks/useNavPrefs'
 import { useTheme, ACCENT_OPTIONS } from '../hooks/useTheme'
+import { NAV_PAGES } from '../lib/navPrefs'
 import { useTreino } from '../hooks/useTreino'
 import { useConfirm, useToast } from '../components/ui/Feedback'
 import { firebaseReady } from '../lib/firebase'
@@ -38,6 +41,7 @@ export function ConfigPage() {
     authErrorMessage,
   } = useAuth()
   const { theme, setTheme, accent, setAccent } = useTheme()
+  const { favoriteIds, toggleFavorite, resetFavorites } = useNavPrefs()
   const { state, setRestTimerEnabled, setRestSeconds } = useTreino()
   const { toast } = useToast()
   const { confirm } = useConfirm()
@@ -273,6 +277,49 @@ export function ConfigPage() {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="surface config-panel" aria-label="Barra de menu">
+        <h2 className="config-panel__title">Barra de menu</h2>
+        <p className="config-theme__hint">
+          Escolhe até 4 favoritos. Os outros ficam no botão +.
+        </p>
+        <div className="config-nav-picks" role="group" aria-label="Atalhos da barra">
+          {NAV_PAGES.map((page) => {
+            const on = favoriteIds.includes(page.id)
+            return (
+              <button
+                key={page.id}
+                type="button"
+                className={`config-nav-pick${on ? ' is-on' : ''}`}
+                aria-pressed={on}
+                onClick={() => {
+                  const result = toggleFavorite(page.id)
+                  if (!result.ok && result.message) {
+                    toast(result.message, 'warn')
+                    return
+                  }
+                  toast(on ? `${page.label} foi para o +` : `${page.label} na barra`, 'ok')
+                }}
+              >
+                <span className="config-nav-pick__mark" aria-hidden>
+                  {on ? <Menu size={14} /> : '+'}
+                </span>
+                {page.label}
+              </button>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          className="btn btn--ghost config-nav-reset"
+          onClick={() => {
+            resetFavorites()
+            toast('Barra reposta ao padrão', 'ok')
+          }}
+        >
+          Repor padrão
+        </button>
       </section>
 
       {isRegistered ? (

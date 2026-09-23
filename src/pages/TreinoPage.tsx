@@ -156,16 +156,32 @@ export function TreinoPage() {
     }
   }, [selectedDay, plan, state.weekDone, state.history, todayKey])
 
+  const doneTemplateIdsThisWeek = useMemo(() => {
+    const weekKeys = new Set(days.map((d) => dateKey(d)))
+    const ids = new Set<string>()
+    for (const [key, templateId] of Object.entries(state.weekDone)) {
+      if (weekKeys.has(key) && templateId) ids.add(templateId)
+    }
+    for (const session of state.history) {
+      if (
+        session.templateId &&
+        session.completedAt &&
+        weekKeys.has(session.dateKey)
+      ) {
+        ids.add(session.templateId)
+      }
+    }
+    return ids
+  }, [days, state.weekDone, state.history])
+
   const missedWorkouts = useMemo(() => {
     return plan
       .filter((t) => {
         if (t.dayOfWeek >= todayDow) return false
-        const day = days.find((d) => d.getDay() === t.dayOfWeek)
-        if (!day) return false
-        return !state.weekDone[dateKey(day)]
+        return !doneTemplateIdsThisWeek.has(t.id)
       })
       .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
-  }, [plan, days, state.weekDone, todayDow])
+  }, [plan, todayDow, doneTemplateIdsThisWeek])
 
   useEffect(() => {
     if (!active) setInSession(false)
@@ -835,12 +851,7 @@ export function TreinoPage() {
                     .map((template) => {
                       const isToday =
                         template.dayOfWeek === new Date().getDay()
-                      const doneDay = days.find(
-                        (d) =>
-                          d.getDay() === template.dayOfWeek &&
-                          state.weekDone[dateKey(d)],
-                      )
-                      const isDone = Boolean(doneDay)
+                      const isDone = doneTemplateIdsThisWeek.has(template.id)
                       const cardioMins = template.exercises
                         .filter((e) => e.muscle === 'cardio')
                         .reduce(

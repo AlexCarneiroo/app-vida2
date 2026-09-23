@@ -444,6 +444,64 @@ export function HabitosPage() {
         </div>
       </div>
 
+      <ActivityHeatmap log={dayLog} range="month" title="Hábitos no mês" />
+
+      <div className="section-label">
+        <h2>Hoje</h2>
+        <span>
+          {doneCount}/{total}
+        </span>
+      </div>
+
+      {dueToday.length === 0 ? (
+        <div className="surface finance-empty">
+          <Sparkles size={24} />
+          <p>
+            {allTotal === 0
+              ? 'Ainda sem hábitos. Cria o primeiro ou usa uma ideia rápida.'
+              : 'Nada agendado para hoje — desfruta do descanso.'}
+          </p>
+        </div>
+      ) : (
+        <motion.div
+          className="surface habit-list"
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+        >
+          {dueToday.map((h) => (
+            <HabitRow
+              key={h.id}
+              habit={h}
+              linkedGoalName={
+                h.linkedPersonalGoalId
+                  ? personalGoalNameById.get(h.linkedPersonalGoalId)
+                  : null
+              }
+              financeGoalName={
+                h.linkedGoalId ? financeGoalNameById.get(h.linkedGoalId) : null
+              }
+              removing={removingId === h.id}
+              onToggle={() => completeHabitAction(h)}
+              onBump={(delta) => {
+                const wasDone = h.doneToday
+                bumpHabitProgress(h.id, delta)
+                if (
+                  !wasDone &&
+                  delta > 0 &&
+                  h.progressToday + delta >= h.goalTarget
+                ) {
+                  boostLinkedGoal(h)
+                }
+              }}
+              onSkip={() => handleSkip(h)}
+              onEdit={() => openEdit(h)}
+              onRemove={() => handleRemove(h.id, h.name)}
+            />
+          ))}
+        </motion.div>
+      )}
+
       <div className="section-label">
         <h2>Metas pessoais</h2>
         <button
@@ -965,62 +1023,6 @@ export function HabitosPage() {
         </form>
       )}
 
-      <div className="section-label">
-        <h2>Hoje</h2>
-        <span>
-          {doneCount}/{total}
-        </span>
-      </div>
-
-      {dueToday.length === 0 ? (
-        <div className="surface finance-empty">
-          <Sparkles size={24} />
-          <p>
-            {allTotal === 0
-              ? 'Ainda sem hábitos. Cria o primeiro ou usa uma ideia rápida.'
-              : 'Nada agendado para hoje — desfruta do descanso.'}
-          </p>
-        </div>
-      ) : (
-        <motion.div
-          className="surface habit-list"
-          variants={staggerContainer}
-          initial="hidden"
-          animate="show"
-        >
-          {dueToday.map((h) => (
-            <HabitRow
-              key={h.id}
-              habit={h}
-              linkedGoalName={
-                h.linkedPersonalGoalId
-                  ? personalGoalNameById.get(h.linkedPersonalGoalId)
-                  : null
-              }
-              financeGoalName={
-                h.linkedGoalId ? financeGoalNameById.get(h.linkedGoalId) : null
-              }
-              removing={removingId === h.id}
-              onToggle={() => completeHabitAction(h)}
-              onBump={(delta) => {
-                const wasDone = h.doneToday
-                bumpHabitProgress(h.id, delta)
-                if (
-                  !wasDone &&
-                  delta > 0 &&
-                  h.progressToday + delta >= h.goalTarget
-                ) {
-                  boostLinkedGoal(h)
-                }
-              }}
-              onSkip={() => handleSkip(h)}
-              onEdit={() => openEdit(h)}
-              onRemove={() => handleRemove(h.id, h.name)}
-            />
-          ))}
-        </motion.div>
-      )}
-
       {restingToday.length > 0 && (
         <>
           <div className="section-label">
@@ -1047,31 +1049,31 @@ export function HabitosPage() {
                 <span className="streak">
                   <Flame size={12} /> {h.streak}d
                 </span>
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  onClick={() => openEdit(h)}
-                  aria-label={`Editar ${h.name}`}
-                  title="Editar"
-                >
-                  <Pencil size={14} />
-                </button>
-                <Button
-                  variant="ghost"
-                  className="finance-row__del"
-                  icon={<Trash2 size={14} />}
-                  loading={removingId === h.id}
-                  onClick={() => handleRemove(h.id, h.name)}
-                  title="Excluir"
-                  aria-label={`Excluir ${h.name}`}
-                />
+                <div className="habit-row__tools">
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => openEdit(h)}
+                    aria-label={`Editar ${h.name}`}
+                    title="Editar"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <Button
+                    variant="ghost"
+                    className="finance-row__del"
+                    icon={<Trash2 size={14} />}
+                    loading={removingId === h.id}
+                    onClick={() => handleRemove(h.id, h.name)}
+                    title="Excluir"
+                    aria-label={`Excluir ${h.name}`}
+                  />
+                </div>
               </div>
             ))}
           </div>
         </>
       )}
-
-      <ActivityHeatmap log={dayLog} title="Hábitos no ano" />
     </PageTransition>
   )
 }
@@ -1098,9 +1100,9 @@ function HabitRow({
   onRemove: () => void
 }) {
   const status = h.doneToday
-    ? 'Concluído'
+    ? 'Feito'
     : h.skippedToday
-      ? 'Dia difícil — sequência protegida'
+      ? 'Protegido'
       : h.goalKind === 'count'
         ? `${h.progressToday}/${h.goalTarget}`
         : 'Pendente'
@@ -1129,76 +1131,73 @@ function HabitRow({
         <strong>{h.name}</strong>
         <span>
           {habitMetaLine(h, linkedGoalName, financeGoalName)}
-          {' · '}
-          {status}
+          {h.goalKind !== 'count' || h.doneToday || h.skippedToday
+            ? ` · ${status}`
+            : ''}
         </span>
-        {h.bestStreak > h.streak && h.bestStreak > 0 && (
-          <em className="habit-best">Melhor: {h.bestStreak}d</em>
-        )}
       </span>
-
-      {h.goalKind === 'count' && !h.doneToday && !h.skippedToday && (
-        <div className="habit-count">
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => onBump(-1)}
-            disabled={h.progressToday <= 0}
-            aria-label="Menos"
-          >
-            <Minus size={14} />
-          </button>
-          <span>
-            {h.progressToday}/{h.goalTarget}
-          </span>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => onBump(1)}
-            aria-label="Mais"
-          >
-            <Plus size={14} />
-          </button>
-        </div>
-      )}
 
       <span className="streak" title="Sequência atual">
         <Flame size={12} /> {h.streak}d
       </span>
 
-      <button
-        type="button"
-        className={`btn btn--ghost habit-skip${h.skippedToday ? ' is-on' : ''}`}
-        onClick={onSkip}
-        title="Dia difícil — protege a sequência"
-        aria-label="Dia difícil"
-        disabled={h.doneToday && !h.skippedToday}
-      >
-        <Shield size={14} />
-        <span className="habit-skip__label">
-          {h.skippedToday ? 'Protegido' : 'Dia difícil'}
-        </span>
-      </button>
+      <div className="habit-row__tools">
+        {h.goalKind === 'count' && !h.doneToday && !h.skippedToday && (
+          <div className="habit-count">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => onBump(-1)}
+              disabled={h.progressToday <= 0}
+              aria-label="Menos"
+            >
+              <Minus size={14} />
+            </button>
+            <span>
+              {h.progressToday}/{h.goalTarget}
+            </span>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => onBump(1)}
+              aria-label="Mais"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        )}
 
-      <button
-        type="button"
-        className="btn btn--ghost"
-        onClick={onEdit}
-        title="Editar"
-        aria-label={`Editar ${h.name}`}
-      >
-        <Pencil size={14} />
-      </button>
+        <button
+          type="button"
+          className={`btn btn--ghost habit-skip${h.skippedToday ? ' is-on' : ''}`}
+          onClick={onSkip}
+          title="Dia difícil — protege a sequência"
+          aria-label="Dia difícil"
+          disabled={h.doneToday && !h.skippedToday}
+        >
+          <Shield size={14} />
+        </button>
 
-      <Button
-        variant="ghost"
-        className="finance-row__del"
-        icon={<Trash2 size={14} />}
-        loading={removing}
-        onClick={onRemove}
-        title="Excluir"
-        aria-label={`Excluir ${h.name}`}
-      />
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={onEdit}
+          title="Editar"
+          aria-label={`Editar ${h.name}`}
+        >
+          <Pencil size={14} />
+        </button>
+
+        <Button
+          variant="ghost"
+          className="finance-row__del"
+          icon={<Trash2 size={14} />}
+          loading={removing}
+          onClick={onRemove}
+          title="Excluir"
+          aria-label={`Excluir ${h.name}`}
+        />
+      </div>
     </motion.div>
   )
 }

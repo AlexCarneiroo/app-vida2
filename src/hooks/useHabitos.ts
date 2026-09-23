@@ -6,8 +6,8 @@ import {
   isHabitDueOn,
   renewFreezes,
 } from '../data/habitosDefaults'
-import { dateKey } from '../lib/date'
 import { loadHabitosPersisted } from '../lib/persist'
+import { useCalendarDay } from './useCalendarDay'
 import type {
   Habit,
   HabitInput,
@@ -43,6 +43,20 @@ function withDayLog(
   }
 }
 
+function isFreshForDay(h: Habit, today: string) {
+  if (h.lastDoneDateKey === today || h.lastSkipDateKey === today) return true
+  return !h.doneToday && !h.skippedToday && h.progressToday === 0
+}
+
+function resetHabitForNewDay(h: Habit): Habit {
+  return {
+    ...h,
+    doneToday: false,
+    skippedToday: false,
+    progressToday: 0,
+  }
+}
+
 function markComplete(h: Habit, today: string): Habit {
   const nextStreak = h.lastDoneDateKey === today ? h.streak : h.streak + 1
   return {
@@ -70,25 +84,40 @@ export function useHabitos() {
     isEmpty,
   })
 
-  const today = dateKey()
+  const today = useCalendarDay()
   const skipResultRef = useRef<SkipHabitResult>({ ok: false })
 
   useEffect(() => {
-    if (state.dayKey === today) return
+    const stale =
+      state.dayKey !== today ||
+      state.habits.some((h) => !isFreshForDay(h, today))
+    if (!stale) return
     update((prev) => {
-      const prevKey = prev.dayKey
+      const prevKey = prev.dayKey || today
+      const crossingDay = prevKey !== today
       const habits = prev.habits.map((raw) => {
         let h = renewFreezes(raw)
-        const wasDue = isHabitDueOn(h, prevKey)
-        if (wasDue && !h.doneToday && !h.skippedToday && h.streak > 0) {
-          h = { ...h, streak: 0 }
+        if (h.lastDoneDateKey === today) {
+          return {
+            ...h,
+            doneToday: h.doneToday,
+            skippedToday: false,
+          }
         }
-        return {
-          ...h,
-          doneToday: false,
-          skippedToday: false,
-          progressToday: 0,
+        if (h.lastSkipDateKey === today) {
+          return {
+            ...h,
+            skippedToday: true,
+            doneToday: false,
+          }
         }
+        if (crossingDay) {
+          const wasDue = isHabitDueOn(h, prevKey)
+          if (wasDue && !h.doneToday && !h.skippedToday && h.streak > 0) {
+            h = { ...h, streak: 0 }
+          }
+        }
+        return resetHabitForNewDay(h)
       })
       return {
         ...prev,
@@ -97,7 +126,7 @@ export function useHabitos() {
         habits,
       }
     })
-  }, [state.dayKey, today, update])
+  }, [state.dayKey, state.habits, today, update])
 
   useEffect(() => {
     const needsRenew = state.habits.some((h) => renewFreezes(h) !== h)
