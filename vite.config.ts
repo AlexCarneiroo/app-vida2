@@ -1,9 +1,21 @@
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+function appRelease() {
+  try {
+    return execSync('git rev-list --count HEAD', { encoding: 'utf8' }).trim()
+  } catch {
+    return '1'
+  }
+}
+
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_RELEASE': JSON.stringify(appRelease()),
+  },
   plugins: [
     react(),
     babel({ presets: [reactCompilerPreset()] }),

@@ -192,9 +192,17 @@ export function PlanEditor({
 
   function changeMuscle(exerciseId: string, muscle: MuscleGroup) {
     if (!template) return
+    const isCardio = muscle === 'cardio'
     onUpdateExercise(template.id, exerciseId, {
       muscle,
       name: defaultExerciseName(muscle),
+      sets: isCardio
+        ? [{ reps: 30, weight: 0 }]
+        : [
+            { reps: 10, weight: 20 },
+            { reps: 10, weight: 20 },
+            { reps: 10, weight: 20 },
+          ],
     })
     setCustomExId(null)
   }
@@ -484,35 +492,57 @@ export function PlanEditor({
 
                       <div className="plan-ex__sets">
                         {ex.sets.map((set, setIndex) => (
-                          <div key={setIndex} className="plan-ex__set">
+                          <div
+                            key={setIndex}
+                            className={`plan-ex__set${ex.muscle === 'cardio' ? ' is-cardio' : ''}`}
+                          >
                             <span className="plan-ex__set-n">{setIndex + 1}</span>
-                            <label className="plan-field">
-                              <span>Reps</span>
-                              <input
-                                type="number"
-                                min={0}
-                                value={set.reps}
-                                onChange={(e) =>
-                                  onUpdateSet(template.id, ex.id, setIndex, {
-                                    reps: Number(e.target.value) || 0,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label className="plan-field">
-                              <span>Carga</span>
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.5}
-                                value={set.weight}
-                                onChange={(e) =>
-                                  onUpdateSet(template.id, ex.id, setIndex, {
-                                    weight: Number(e.target.value) || 0,
-                                  })
-                                }
-                              />
-                            </label>
+                            {ex.muscle === 'cardio' ? (
+                              <label className="plan-field plan-field--grow">
+                                <span>Minutos alvo</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={set.reps}
+                                  onChange={(e) =>
+                                    onUpdateSet(template.id, ex.id, setIndex, {
+                                      reps: Number(e.target.value) || 0,
+                                      weight: 0,
+                                    })
+                                  }
+                                />
+                              </label>
+                            ) : (
+                              <>
+                                <label className="plan-field">
+                                  <span>Reps</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={set.reps}
+                                    onChange={(e) =>
+                                      onUpdateSet(template.id, ex.id, setIndex, {
+                                        reps: Number(e.target.value) || 0,
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="plan-field">
+                                  <span>Carga</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.5}
+                                    value={set.weight}
+                                    onChange={(e) =>
+                                      onUpdateSet(template.id, ex.id, setIndex, {
+                                        weight: Number(e.target.value) || 0,
+                                      })
+                                    }
+                                  />
+                                </label>
+                              </>
+                            )}
                             <button
                               type="button"
                               className="btn btn--ghost"
@@ -530,7 +560,7 @@ export function PlanEditor({
                           onClick={() => onAddSet(template.id, ex.id)}
                         >
                           <Plus size={14} />
-                          Série
+                          {ex.muscle === 'cardio' ? 'Intervalo' : 'Série'}
                         </button>
                       </div>
                     </div>

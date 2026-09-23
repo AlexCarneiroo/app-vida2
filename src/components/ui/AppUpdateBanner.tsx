@@ -1,6 +1,7 @@
 import { RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
+import { APP_VERSION_LABEL } from '../../lib/appVersion'
 
 /**
  * Atualização da app sem apagar dados:
@@ -24,7 +25,10 @@ export function AppUpdateBanner() {
 
   return (
     <div className="app-update-banner" role="status">
-      <p>Nova versão pronta. Os teus dados ficam guardados.</p>
+      <p>
+        Nova versão {APP_VERSION_LABEL} pronta. Os teus dados ficam
+        guardados.
+      </p>
       <div className="app-update-banner__actions">
         <button
           type="button"

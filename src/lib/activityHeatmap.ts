@@ -86,12 +86,42 @@ export function buildHeatmap(
 ): HeatmapModel {
   const today = parseKey(dateKey())
   today.setHours(0, 0, 0, 0)
-
-  // Domingo da semana atual
   const endSunday = addDays(today, -today.getDay())
-  // Primeiro domingo do intervalo
   const start = addDays(endSunday, -(weeksCount - 1) * 7)
+  return buildHeatmapFromStart(log, start, weeksCount, today, () => true)
+}
 
+/** Apenas o mês civil atual. */
+export function buildMonthHeatmap(log: DayActivity): HeatmapModel {
+  const today = parseKey(dateKey())
+  today.setHours(0, 0, 0, 0)
+  const year = today.getFullYear()
+  const month = today.getMonth()
+  const first = new Date(year, month, 1)
+  const last = new Date(year, month + 1, 0)
+  const start = addDays(first, -first.getDay())
+  const endSunday = addDays(last, -last.getDay())
+  const weeksCount =
+    Math.round(
+      (endSunday.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    ) + 1
+
+  return buildHeatmapFromStart(
+    log,
+    start,
+    weeksCount,
+    today,
+    (day) => day.getMonth() === month && day.getFullYear() === year,
+  )
+}
+
+function buildHeatmapFromStart(
+  log: DayActivity,
+  start: Date,
+  weeksCount: number,
+  today: Date,
+  inPeriod: (day: Date) => boolean,
+): HeatmapModel {
   const values = Object.values(log)
   const max = values.length ? Math.max(...values) : 0
 
@@ -103,7 +133,8 @@ export function buildHeatmap(
     for (let dow = 0; dow < 7; dow++) {
       const day = addDays(start, w * 7 + dow)
       const key = dateKey(day)
-      const inRange = day.getTime() <= today.getTime()
+      const inRange =
+        day.getTime() <= today.getTime() && inPeriod(day)
       const count = inRange ? log[key] ?? 0 : 0
       if (count > 0) total += count
       col.push({

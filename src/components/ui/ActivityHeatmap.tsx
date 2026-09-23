@@ -1,19 +1,24 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   buildHeatmap,
+  buildMonthHeatmap,
   type DayActivity,
+  type HeatmapCell,
 } from '../../lib/activityHeatmap'
 import { formatDateBR } from '../../lib/date'
 
 type Props = {
   log: DayActivity
   title?: string
-  /** Máximo de semanas (default 53 ≈ 1 ano). Em ecrãs estreitos reduz sozinho. */
+  /** Ano (~53 semanas) ou só o mês corrente. */
+  range?: 'year' | 'month'
+  /** Máximo de semanas no modo year (default 53). */
   weeks?: number
   className?: string
 }
 
 const WEEKDAY_LABELS = ['', 'Seg', '', 'Qua', '', 'Sex', ''] as const
+const MONTH_DOW = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'] as const
 const DOW_COL = 22
 const MIN_CELL = 8
 const MAX_CELL = 14
@@ -21,9 +26,8 @@ const MAX_CELL = 14
 function layoutForWidth(width: number, maxWeeks: number) {
   const gap = width < 420 ? 2 : width < 720 ? 2.5 : 3
   const available = Math.max(80, width - DOW_COL - 4)
-  // Quantas semanas cabem com célula mínima
   let weeks = Math.floor((available + gap) / (MIN_CELL + gap))
-  weeks = Math.min(maxWeeks, Math.max(12, weeks))
+  weeks = Math.min(maxWeeks, Math.max(Math.min(12, maxWeeks), weeks))
   const cell = Math.min(
     MAX_CELL,
     Math.max(MIN_CELL, Math.floor((available - (weeks - 1) * gap) / weeks)),
@@ -36,6 +40,7 @@ function layoutForWidth(width: number, maxWeeks: number) {
 export function ActivityHeatmap({
   log,
   title,
+  range = 'year',
   weeks: maxWeeks = 53,
   className = '',
 }: Props) {
@@ -49,6 +54,7 @@ export function ActivityHeatmap({
   const [tip, setTip] = useState<string | null>(null)
 
   useEffect(() => {
+    if (range === 'month') return
     const el = scrollRef.current
     if (!el) return
 
@@ -68,29 +74,53 @@ export function ActivityHeatmap({
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [maxWeeks])
+  }, [maxWeeks, range])
 
-  const model = useMemo(
-    () => buildHeatmap(log, layout.weeks),
-    [log, layout.weeks],
-  )
+  const model = useMemo(() => {
+    if (range === 'month') return buildMonthHeatmap(log)
+    return buildHeatmap(log, layout.weeks)
+  }, [log, layout.weeks, range])
 
-  // Mostra as semanas mais recentes (direita)
   useEffect(() => {
     const el = scrollRef.current
-    if (!el) return
+    if (!el || range === 'month') return
     requestAnimationFrame(() => {
       el.scrollLeft = el.scrollWidth
     })
-  }, [layout.weeks, layout.cell, model.weeks.length])
+  }, [layout.weeks, layout.cell, model.weeks.length, range])
+
+  const monthName = useMemo(() => {
+    const label = new Date().toLocaleDateString('pt-BR', {
+      month: 'long',
+      year: 'numeric',
+    })
+    return label.charAt(0).toUpperCase() + label.slice(1)
+  }, [])
 
   const heading =
     title ??
-    `${model.total} ${model.total === 1 ? 'atividade' : 'atividades'} em ${model.year}`
+    (range === 'month'
+      ? `${model.total} ${model.total === 1 ? 'treino' : 'treinos'} · ${monthName}`
+      : `${model.total} ${model.total === 1 ? 'atividade' : 'atividades'} em ${model.year}`)
 
   const showTip = (cell: { dateKey: string; count: number }) => {
     setTip(
       `${formatDateBR(cell.dateKey)} · ${cell.count} ${cell.count === 1 ? 'atividade' : 'atividades'}`,
+    )
+  }
+
+  if (range === 'month') {
+    return (
+      <MonthHeatmap
+        weeks={model.weeks}
+        total={model.total}
+        heading={heading}
+        monthName={monthName}
+        tip={tip}
+        className={className}
+        onShowTip={showTip}
+        onClearTip={() => setTip(null)}
+      />
     )
   }
 
@@ -170,6 +200,100 @@ export function ActivityHeatmap({
             ? 'Desliza para ver mais semanas'
             : `${layout.weeks} semanas`}
         </span>
+        <div className="activity-map__legend" aria-hidden>
+          <span>Menos</span>
+          {[0, 1, 2, 3, 4].map((level) => (
+            <span
+              key={level}
+              className={`activity-map__cell level-${level} is-swatch`}
+            />
+          ))}
+          <span>Mais</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+type MonthProps = {
+  weeks: HeatmapCell[][]
+  total: number
+  heading: string
+  monthName: string
+  tip: string | null
+  className: string
+  onShowTip: (cell: { dateKey: string; count: number }) => void
+  onClearTip: () => void
+}
+
+function MonthHeatmap({
+  weeks,
+  heading,
+  monthName,
+  tip,
+  className,
+  onShowTip,
+  onClearTip,
+}: MonthProps) {
+  const now = new Date()
+  const curMonth = now.getMonth()
+  const curYear = now.getFullYear()
+  const todayKey = `${curYear}-${String(curMonth + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  return (
+    <section
+      className={`surface activity-map activity-map--month ${className}`.trim()}
+    >
+      <div className="activity-map__head">
+        <h2 className="activity-map__title">{heading}</h2>
+        {tip && <p className="activity-map__tip">{tip}</p>}
+      </div>
+
+      <div className="activity-map__month-cal" role="grid" aria-label={monthName}>
+        <div className="activity-map__month-dows" aria-hidden>
+          {MONTH_DOW.map((label, i) => (
+            <span key={i}>{label}</span>
+          ))}
+        </div>
+        <div className="activity-map__month-grid">
+          {weeks.map((week) =>
+            week.map((cell) => {
+              const [y, m, d] = cell.dateKey.split('-').map(Number)
+              const inMonth = m - 1 === curMonth && y === curYear
+              const isFuture = cell.dateKey > todayKey
+              const dayNum = d
+              const interactive = inMonth && !isFuture
+              return (
+                <button
+                  key={cell.dateKey}
+                  type="button"
+                  role="gridcell"
+                  className={[
+                    'activity-map__month-day',
+                    `level-${interactive ? cell.level : 0}`,
+                    !inMonth ? 'is-outside' : '',
+                    inMonth && isFuture ? 'is-future-day' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  disabled={!interactive}
+                  aria-label={`${formatDateBR(cell.dateKey)}: ${cell.count} ${cell.count === 1 ? 'treino' : 'treinos'}`}
+                  onFocus={() => interactive && onShowTip(cell)}
+                  onBlur={onClearTip}
+                  onMouseEnter={() => interactive && onShowTip(cell)}
+                  onMouseLeave={onClearTip}
+                  onTouchStart={() => interactive && onShowTip(cell)}
+                >
+                  <span className="activity-map__month-day-num">{dayNum}</span>
+                </button>
+              )
+            }),
+          )}
+        </div>
+      </div>
+
+      <div className="activity-map__footer">
+        <span className="activity-map__hint">{monthName}</span>
         <div className="activity-map__legend" aria-hidden>
           <span>Menos</span>
           {[0, 1, 2, 3, 4].map((level) => (

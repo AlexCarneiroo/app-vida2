@@ -1,13 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Cloud,
+  CloudOff,
   KeyRound,
   LogIn,
   LogOut,
   Mail,
   Moon,
   Phone,
-  Settings,
   Sun,
   Timer,
   UserRound,
@@ -16,11 +15,12 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { Button } from '../components/ui/Button'
 import { PageTransition } from '../components/ui/PageTransition'
 import { useAuth } from '../hooks/useAuth'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { useTheme, ACCENT_OPTIONS } from '../hooks/useTheme'
 import { useTreino } from '../hooks/useTreino'
 import { useConfirm, useToast } from '../components/ui/Feedback'
-import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from '../lib/cloudSync'
 import { firebaseReady } from '../lib/firebase'
+import { APP_VERSION_LABEL, appVersionHint } from '../lib/appVersion'
 
 type AuthTab = 'login' | 'register'
 
@@ -41,6 +41,7 @@ export function ConfigPage() {
   const { state, setRestTimerEnabled, setRestSeconds } = useTreino()
   const { toast } = useToast()
   const { confirm } = useConfirm()
+  const online = useOnlineStatus()
   const restTimerEnabled = state.settings.restTimerEnabled
   const restSeconds = state.settings.restSeconds
 
@@ -53,7 +54,6 @@ export function ConfigPage() {
 
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus())
 
   useEffect(() => {
     if (profile) {
@@ -61,13 +61,6 @@ export function ConfigPage() {
       setEditPhone(profile.phone)
     }
   }, [profile])
-
-  useEffect(() => {
-    const unsub = subscribeSyncStatus(setSyncStatus)
-    return () => {
-      unsub()
-    }
-  }, [])
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault()
@@ -131,6 +124,17 @@ export function ConfigPage() {
     toast('Sessão terminada', 'info')
   }
 
+  function toggleRestTimer() {
+    const next = !restTimerEnabled
+    setRestTimerEnabled(next)
+    toast(next ? 'Contador ligado' : 'Contador desligado', 'ok')
+  }
+
+  function changeRestSeconds(sec: typeof restSeconds) {
+    setRestSeconds(sec)
+    toast(`Descanso ${sec}s`, 'ok')
+  }
+
   if (!ready) {
     return (
       <PageTransition>
@@ -145,12 +149,10 @@ export function ConfigPage() {
         <div>
           <p className="page-kicker">Conta</p>
           <h1 className="page-title">Configuração</h1>
-          <p className="page-sub">
-            Os teus dados, aparência e sincronização com a nuvem.
-          </p>
+          <p className="page-sub">Perfil, aparência e treino neste dispositivo.</p>
         </div>
-        <span className="config-hero-icon" aria-hidden>
-          <Settings size={22} />
+        <span className="config-version-chip" title={appVersionHint()}>
+          {APP_VERSION_LABEL}
         </span>
       </header>
 
@@ -160,7 +162,7 @@ export function ConfigPage() {
         </div>
       )}
 
-      <section className="surface config-card">
+      <section className="surface config-panel">
         <div className="config-card__head">
           <span className="config-avatar">
             <UserRound size={22} />
@@ -174,38 +176,23 @@ export function ConfigPage() {
             <span>
               {isRegistered
                 ? profile?.email || user?.email
-                : 'Entra ou cria conta para sincronizar entre dispositivos'}
+                : 'Entra para sincronizar entre dispositivos'}
             </span>
           </div>
         </div>
 
-        <div className="config-sync-row">
-          <Cloud size={14} />
-          <span>
-            {syncStatus === 'saved'
-              ? 'Dados na nuvem'
-              : syncStatus === 'syncing'
-                ? 'A sincronizar…'
-                : syncStatus === 'offline'
-                  ? 'Offline — grava local'
-                  : syncStatus === 'error'
-                    ? 'Erro de sincronização'
-                    : 'Sincronização pronta'}
-          </span>
-        </div>
+        {!online && (
+          <div className="config-sync-row">
+            <CloudOff size={14} />
+            <span>Offline — os dados ficam neste dispositivo</span>
+          </div>
+        )}
       </section>
 
-      <div className="section-label">
-        <h2>Aparência</h2>
-        <span>Tema e cor</span>
-      </div>
+      <section className="surface config-panel" aria-label="Preferências">
+        <h2 className="config-panel__title">Preferências</h2>
 
-      <section className="surface config-theme" aria-label="Escolher tema">
-        <p className="config-theme__hint">
-          Escolhe o modo claro ou escuro. A preferência fica guardada neste
-          dispositivo.
-        </p>
-        <div className="config-theme__options" role="group">
+        <div className="config-theme__options" role="group" aria-label="Tema">
           <button
             type="button"
             className={theme === 'light' ? 'is-active' : ''}
@@ -226,34 +213,26 @@ export function ConfigPage() {
           </button>
         </div>
 
-        <div className="config-accent">
-          <p className="config-theme__hint">Cor principal</p>
-          <div className="config-accent__swatches" role="group" aria-label="Cor principal">
-            {ACCENT_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={`config-accent__swatch${accent === opt.id ? ' is-active' : ''}`}
-                style={{ '--swatch': opt.swatch } as CSSProperties}
-                onClick={() => setAccent(opt.id)}
-                aria-pressed={accent === opt.id}
-                aria-label={opt.label}
-                title={opt.label}
-              >
-                <span className="config-accent__dot" aria-hidden />
-                <em>{opt.label}</em>
-              </button>
-            ))}
-          </div>
+        <div className="config-accent__swatches" role="group" aria-label="Cor principal">
+          {ACCENT_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              className={`config-accent__swatch${accent === opt.id ? ' is-active' : ''}`}
+              style={{ '--swatch': opt.swatch } as CSSProperties}
+              onClick={() => setAccent(opt.id)}
+              aria-pressed={accent === opt.id}
+              aria-label={opt.label}
+              title={opt.label}
+            >
+              <span className="config-accent__dot" aria-hidden />
+              <em>{opt.label}</em>
+            </button>
+          ))}
         </div>
-      </section>
 
-      <div className="section-label">
-        <h2>Treino</h2>
-        <span>Descanso</span>
-      </div>
+        <div className="config-panel__divider" />
 
-      <section className="surface config-pref" aria-label="Contador de descanso">
         <div className="config-pref__row">
           <div className="config-pref__info">
             <span className="config-pref__icon" aria-hidden>
@@ -261,10 +240,7 @@ export function ConfigPage() {
             </span>
             <div>
               <strong>Contador de descanso</strong>
-              <p>
-                Aparece após marcares uma série. Desativa se preferires
-                treinar sem o timer.
-              </p>
+              <p>Guarda sozinho ao ligar ou desligar.</p>
             </div>
           </div>
           <button
@@ -273,7 +249,7 @@ export function ConfigPage() {
             role="switch"
             aria-checked={restTimerEnabled}
             aria-label="Contador de descanso"
-            onClick={() => setRestTimerEnabled(!restTimerEnabled)}
+            onClick={toggleRestTimer}
           >
             <span className="config-switch__knob" />
           </button>
@@ -281,14 +257,14 @@ export function ConfigPage() {
 
         {restTimerEnabled && (
           <div className="config-pref__presets" role="group" aria-label="Duração padrão">
-            <span>Duração padrão</span>
+            <span>Duração</span>
             <div className="rest-prefs__btns">
               {([60, 90, 120] as const).map((sec) => (
                 <button
                   key={sec}
                   type="button"
                   className={`rest-prefs__btn${restSeconds === sec ? ' is-active' : ''}`}
-                  onClick={() => setRestSeconds(sec)}
+                  onClick={() => changeRestSeconds(sec)}
                   aria-pressed={restSeconds === sec}
                 >
                   {sec}s
@@ -300,50 +276,46 @@ export function ConfigPage() {
       </section>
 
       {isRegistered ? (
-        <>
-          <div className="section-label">
-            <h2>Os teus dados</h2>
-            <span>Perfil</span>
-          </div>
-
-          <form className="surface config-form" onSubmit={handleSaveProfile}>
-            <label className="plan-field">
-              <span>Nome</span>
-              <div className="config-input">
-                <UserRound size={16} />
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder="O teu nome"
-                  required
-                />
-              </div>
-            </label>
-            <label className="plan-field">
-              <span>E-mail</span>
-              <div className="config-input is-locked">
-                <Mail size={16} />
-                <input
-                  type="email"
-                  value={profile?.email || user?.email || ''}
-                  readOnly
-                  tabIndex={-1}
-                />
-              </div>
-            </label>
-            <label className="plan-field">
-              <span>Telefone (opcional)</span>
-              <div className="config-input">
-                <Phone size={16} />
-                <input
-                  type="tel"
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
-                  placeholder="Ex.: 11 99999-0000"
-                />
-              </div>
-            </label>
+        <form className="surface config-panel config-form" onSubmit={handleSaveProfile}>
+          <h2 className="config-panel__title">Perfil</h2>
+          <label className="plan-field">
+            <span>Nome</span>
+            <div className="config-input">
+              <UserRound size={16} />
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="O teu nome"
+                required
+              />
+            </div>
+          </label>
+          <label className="plan-field">
+            <span>E-mail</span>
+            <div className="config-input is-locked">
+              <Mail size={16} />
+              <input
+                type="email"
+                value={profile?.email || user?.email || ''}
+                readOnly
+                tabIndex={-1}
+              />
+            </div>
+          </label>
+          <label className="plan-field">
+            <span>Telefone (opcional)</span>
+            <div className="config-input">
+              <Phone size={16} />
+              <input
+                type="tel"
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                placeholder="Ex.: 11 99999-0000"
+              />
+            </div>
+          </label>
+          <div className="config-form__actions">
             <Button
               type="submit"
               variant="primary"
@@ -352,24 +324,19 @@ export function ConfigPage() {
             >
               Guardar perfil
             </Button>
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              icon={<LogOut size={16} />}
+              className="btn btn--ghost config-logout"
               onClick={handleLogout}
               disabled={busy}
             >
-              Sair da conta
-            </Button>
-          </form>
-        </>
-      ) : (
-        <>
-          <div className="section-label">
-            <h2>{tab === 'login' ? 'Entrar' : 'Criar conta'}</h2>
-            <span>{isAnonymous ? 'Convidado' : 'Conta'}</span>
+              <LogOut size={16} />
+              Sair
+            </button>
           </div>
-
+        </form>
+      ) : (
+        <section className="config-auth">
           <div className="config-tabs">
             <button
               type="button"
@@ -396,13 +363,16 @@ export function ConfigPage() {
           <AnimatePresence mode="wait">
             <motion.form
               key={tab}
-              className="surface config-form"
+              className="surface config-panel config-form"
               onSubmit={tab === 'login' ? handleLogin : handleRegister}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             >
+              <h2 className="config-panel__title">
+                {tab === 'login' ? 'Entrar' : 'Criar conta'}
+              </h2>
               {tab === 'register' && (
                 <label className="plan-field">
                   <span>Nome</span>
@@ -468,14 +438,17 @@ export function ConfigPage() {
 
               {tab === 'register' && (
                 <p className="config-hint">
-                  Ao cadastrar, os dados deste dispositivo ficam ligados à tua
-                  conta na nuvem.
+                  {isAnonymous
+                    ? 'Ao cadastrar, os dados deste dispositivo ficam ligados à tua conta.'
+                    : 'Os dados deste dispositivo ficam ligados à tua conta.'}
                 </p>
               )}
             </motion.form>
           </AnimatePresence>
-        </>
+        </section>
       )}
+
+      <p className="config-build">{appVersionHint()}</p>
     </PageTransition>
   )
 }

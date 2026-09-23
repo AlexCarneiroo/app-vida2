@@ -461,8 +461,10 @@ export function useTreino() {
   )
 
   const suggestionFor = useCallback(
-    (exercise: Exercise): LoadSuggestion | null =>
-      getLoadSuggestion(exercise, state.history),
+    (exercise: Exercise): LoadSuggestion | null => {
+      if (exercise.muscle === 'cardio') return null
+      return getLoadSuggestion(exercise, state.history)
+    },
     [state.history],
   )
 
@@ -622,10 +624,19 @@ export function useTreino() {
               exercises: t.exercises.map((ex) => {
                 if (ex.id !== exerciseId) return ex
                 const last = ex.sets[ex.sets.length - 1] ?? {
-                  reps: 10,
-                  weight: 20,
+                  reps: ex.muscle === 'cardio' ? 20 : 10,
+                  weight: ex.muscle === 'cardio' ? 0 : 20,
                 }
-                return { ...ex, sets: [...ex.sets, { ...last }] }
+                return {
+                  ...ex,
+                  sets: [
+                    ...ex.sets,
+                    {
+                      reps: last.reps,
+                      weight: ex.muscle === 'cardio' ? 0 : last.weight,
+                    },
+                  ],
+                }
               }),
             },
       ),

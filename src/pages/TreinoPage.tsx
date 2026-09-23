@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
   Clock,
   Dumbbell,
   Flame,
@@ -38,7 +39,7 @@ import { getPresetById } from '../data/planPresets'
 import { DAY_LABELS, DAY_NAMES, clonePlan } from '../data/treinoDefaults'
 import { treinoDayLog } from '../lib/activityHeatmap'
 import { useTreino } from '../hooks/useTreino'
-import { dateKey, formatKg, weekDates } from '../lib/date'
+import { dateKey, weekDates } from '../lib/date'
 import { workoutSetsDone, workoutVolume } from '../lib/treinoStats'
 import type {
   ActiveWorkout,
@@ -100,6 +101,7 @@ export function TreinoPage() {
     null,
   )
   const [idleView, setIdleView] = useState<IdleView>('plan')
+  const [inSession, setInSession] = useState(false)
   const [editSnapshot, setEditSnapshot] = useState<{
     plan: WorkoutTemplate[]
     activePresetId: string | null
@@ -109,6 +111,8 @@ export function TreinoPage() {
   const days = useMemo(() => weekDates(), [])
 
   const active = state.active
+  const showSession = Boolean(active && inSession)
+  const showOverview = !showSession
   const restSeconds = state.settings.restSeconds
   const restTimerEnabled = state.settings.restTimerEnabled
   const treinoLog = useMemo(
@@ -164,14 +168,30 @@ export function TreinoPage() {
   }, [plan, days, state.weekDone, todayDow])
 
   useEffect(() => {
-    if (active?.exercises[0] && !expanded) {
-      setExpanded(active.exercises[0].id)
-    }
+    if (!active) setInSession(false)
+  }, [active])
+
+  useEffect(() => {
     if (!active) {
       setExpanded(null)
       setRest(null)
+      return
     }
-  }, [active?.startedAt])
+    if (inSession && !expanded) {
+      setExpanded(firstIncompleteExerciseId(active))
+    }
+  }, [active?.startedAt, inSession])
+
+  function firstIncompleteExerciseId(workout: ActiveWorkout) {
+    const pending = workout.exercises.find((ex) =>
+      ex.sets.some((s) => !s.done),
+    )
+    return (
+      pending?.id ??
+      workout.exercises[workout.exercises.length - 1]?.id ??
+      null
+    )
+  }
 
   function handleToggleSet(exercise: Exercise, setId: string, wasDone: boolean) {
     toggleSet(exercise.id, setId)
@@ -179,7 +199,22 @@ export function TreinoPage() {
       if (restTimerEnabled) {
         setRest({ key: Date.now(), seconds: restSeconds })
       }
-      setExpanded(exercise.id)
+      const exerciseDone = exercise.sets.every((s) =>
+        s.id === setId ? true : s.done,
+      )
+      if (exerciseDone && active) {
+        const idx = active.exercises.findIndex((e) => e.id === exercise.id)
+        const next = idx >= 0 ? active.exercises[idx + 1] : null
+        if (next) {
+          setExpanded(next.id)
+          toast(`Segue: ${next.name}`, 'ok')
+        } else {
+          setExpanded(exercise.id)
+          toast('Último exercício — podes concluir o treino', 'info')
+        }
+      } else {
+        setExpanded(exercise.id)
+      }
     }
   }
 
@@ -188,7 +223,39 @@ export function TreinoPage() {
     clearSummary()
     setRest(null)
     startWorkout(template)
+    setInSession(true)
     toast('Treino iniciado', 'ok')
+  }
+
+  async function requestStart(template: WorkoutTemplate) {
+    const today = new Date().getDay()
+    if (template.dayOfWeek !== today) {
+      const planned = DAY_NAMES[template.dayOfWeek]
+      const actual = DAY_NAMES[today]
+      const ok = await confirm({
+        title: 'Treino de outro dia',
+        message: `Tens a certeza que queres fazer o treino de ${planned} na ${actual}?`,
+        confirmLabel: 'Sim, iniciar',
+        cancelLabel: 'Cancelar',
+      })
+      if (!ok) return
+    }
+    handleStart(template)
+  }
+
+  function goToOverview() {
+    setInSession(false)
+    setIdleView('plan')
+    setRest(null)
+    toast('Progresso guardado — podes continuar quando quiseres', 'info')
+  }
+
+  function resumeSession() {
+    setIdleView('plan')
+    if (active) {
+      setExpanded(firstIncompleteExerciseId(active))
+    }
+    setInSession(true)
   }
 
   function openEditor() {
@@ -255,18 +322,40 @@ export function TreinoPage() {
     <PageTransition>
       <header className="page-header">
         <div>
-          <p className="page-kicker">Corpo</p>
+          <p className="page-kicker">{showSession ? 'Sessão' : 'Corpo'}</p>
           <h1 className="page-title">Treino</h1>
-          <p className="page-sub">
-            Edita um dia de cada vez. Dias sem treino ficam como descanso
-            (sábado e domingo incluídos).
-          </p>
+          {showOverview && (
+            <p className="page-sub">
+              Edita um dia de cada vez. Dias sem treino ficam como descanso
+              (sábado e domingo incluídos).
+            </p>
+          )}
         </div>
-        {!active && todayTemplate && !isTodayDone && idleView === 'plan' && (
+        {showSession && (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={goToOverview}
+          >
+            <ChevronLeft size={16} />
+            Voltar
+          </button>
+        )}
+        {showOverview && active && (
           <button
             type="button"
             className="btn btn--primary"
-            onClick={() => handleStart(todayTemplate)}
+            onClick={resumeSession}
+          >
+            <Play size={16} />
+            Continuar
+          </button>
+        )}
+        {showOverview && !active && todayTemplate && !isTodayDone && idleView === 'plan' && (
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => requestStart(todayTemplate)}
           >
             <Play size={16} />
             Iniciar hoje
@@ -274,49 +363,81 @@ export function TreinoPage() {
         )}
       </header>
 
-      <WeekStrip
-        days={days}
-        plan={plan}
-        weekDone={state.weekDone}
-        todayKey={todayKey}
-        selectedKey={selectedDayKey}
-        onSelectDay={setSelectedDayKey}
-      />
+      {showOverview && (
+        <>
+          {active && (
+            <button
+              type="button"
+              className="surface surface--interactive treino-resume-banner"
+              onClick={resumeSession}
+            >
+              <ProgressRing value={stats.progress} size={44} stroke={4} />
+              <div className="treino-resume-banner__body">
+                <p className="page-kicker">Em andamento</p>
+                <strong>{active.name}</strong>
+                <span>
+                  {stats.doneSets}/{stats.totalSets} séries ·{' '}
+                  {Math.round(stats.volume)} kg
+                </span>
+              </div>
+              <span className="treino-resume-banner__cta">
+                Continuar
+                <Play size={14} />
+              </span>
+            </button>
+          )}
 
-      <DayDetail
-        day={selectedDay}
-        info={selectedDayInfo}
-        onStart={(t) => handleStart(t)}
-        active={Boolean(active)}
-      />
+          <WeekStrip
+            days={days}
+            plan={plan}
+            weekDone={state.weekDone}
+            todayKey={todayKey}
+            selectedKey={selectedDayKey}
+            onSelectDay={setSelectedDayKey}
+          />
 
-      <motion.div
-        className="treino-stats"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.08, duration: 0.4 }}
-      >
-        <StatChip
-          icon={<Flame size={16} />}
-          label="Semana"
-          value={`${stats.weekSessions} sessões`}
-        />
-        <StatChip
-          icon={<Trophy size={16} />}
-          label="Volume"
-          value={active ? `${Math.round(stats.volume)} kg` : '—'}
-        />
-        <StatChip
-          icon={<Clock size={16} />}
-          label="Séries"
-          value={active ? `${stats.doneSets}/${stats.totalSets}` : '—'}
-        />
-      </motion.div>
+          <DayDetail
+            day={selectedDay}
+            info={selectedDayInfo}
+            onStart={(t) => requestStart(t)}
+            active={Boolean(active)}
+          />
 
-      <ActivityHeatmap log={treinoLog} title="Treinos no ano" />
+          <motion.div
+            className="treino-stats"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08, duration: 0.4 }}
+          >
+            <StatChip
+              icon={<Flame size={16} />}
+              label="Semana"
+              value={`${stats.weekSessions} sessões`}
+            />
+            <StatChip
+              icon={<Trophy size={16} />}
+              label="Volume"
+              value={active ? `${Math.round(stats.volume)} kg` : '—'}
+            />
+            <StatChip
+              icon={<Clock size={16} />}
+              label="Séries"
+              value={
+                active ? `${stats.doneSets}/${stats.totalSets}` : '—'
+              }
+            />
+          </motion.div>
+
+          <ActivityHeatmap
+            log={treinoLog}
+            range="month"
+            title="Treinos no mês"
+          />
+        </>
+      )}
 
       <AnimatePresence>
-        {lastSummary && !active && (
+        {lastSummary && showOverview && !active && (
           <div className="workout-summary-wrap">
             <WorkoutSummaryCard
               summary={lastSummary}
@@ -327,7 +448,7 @@ export function TreinoPage() {
       </AnimatePresence>
 
       <AnimatePresence mode="wait">
-        {active ? (
+        {showSession && active ? (
           <motion.div
             key="active"
             initial={{ opacity: 0, y: 16 }}
@@ -336,34 +457,36 @@ export function TreinoPage() {
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="surface treino-active-head">
-              <div className="treino-active-head__left">
-                <ProgressRing value={stats.progress} size={88} stroke={7} />
-                <div>
-                  <p className="page-kicker">Em andamento</p>
-                  <h2 className="treino-active-title">{active.name}</h2>
-                  <p className="treino-active-focus">{active.focus}</p>
+              <div className="treino-active-head__main">
+                <div className="treino-active-head__left">
+                  <ProgressRing value={stats.progress} size={88} stroke={7} />
+                  <div>
+                    <p className="page-kicker">Em andamento</p>
+                    <h2 className="treino-active-title">{active.name}</h2>
+                    <p className="treino-active-focus">{active.focus}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="treino-active-head__actions">
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  onClick={handleDiscard}
-                  title="Descartar"
-                >
-                  <X size={16} />
-                  Descartar
-                </button>
-                <Button
-                  variant="primary"
-                  icon={<Check size={16} />}
-                  onClick={handleComplete}
-                  disabled={stats.doneSets === 0}
-                  loading={completing}
-                  loadingLabel="A concluir…"
-                >
-                  Concluir
-                </Button>
+                <div className="treino-active-head__actions">
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={handleDiscard}
+                    title="Descartar"
+                  >
+                    <X size={16} />
+                    Descartar
+                  </button>
+                  <Button
+                    variant="primary"
+                    icon={<Check size={16} />}
+                    onClick={handleComplete}
+                    disabled={stats.doneSets === 0}
+                    loading={completing}
+                    loadingLabel="A concluir…"
+                  >
+                    Concluir
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -430,6 +553,9 @@ export function TreinoPage() {
                         <strong>{ex.name}</strong>
                         <span>
                           {ex.muscle}
+                          {ex.muscle === 'cardio'
+                            ? ` · ${ex.sets.reduce((s, set) => s + set.reps, 0)} min alvo`
+                            : ''}
                           {ex.notes ? ` · ${ex.notes}` : ''}
                         </span>
                       </span>
@@ -454,7 +580,7 @@ export function TreinoPage() {
                             ease: [0.22, 1, 0.36, 1],
                           }}
                         >
-                          {suggestion && (
+                          {suggestion && ex.muscle !== 'cardio' && (
                             <button
                               type="button"
                               className="treino-suggest"
@@ -479,7 +605,11 @@ export function TreinoPage() {
                                   onClick={() =>
                                     handleToggleSet(ex, set.id, set.done)
                                   }
-                                  aria-label={`Série ${setIndex + 1}`}
+                                  aria-label={
+                                    ex.muscle === 'cardio'
+                                      ? `Intervalo ${setIndex + 1}`
+                                      : `Série ${setIndex + 1}`
+                                  }
                                 >
                                   {set.done ? (
                                     <Check size={14} strokeWidth={3} />
@@ -487,33 +617,47 @@ export function TreinoPage() {
                                     <span>{setIndex + 1}</span>
                                   )}
                                 </button>
-                                <label className="treino-set__field">
-                                  <span>Reps</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={set.reps}
-                                    onChange={(e) =>
-                                      updateSet(ex.id, set.id, {
-                                        reps: Number(e.target.value) || 0,
-                                      })
-                                    }
-                                  />
-                                </label>
-                                <label className="treino-set__field">
-                                  <span>Carga</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.5}
-                                    value={set.weight}
-                                    onChange={(e) =>
-                                      updateSet(ex.id, set.id, {
-                                        weight: Number(e.target.value) || 0,
-                                      })
-                                    }
-                                  />
-                                </label>
+                                {ex.muscle === 'cardio' ? (
+                                  <label className="treino-set__field treino-set__field--grow">
+                                    <span>Minutos alvo</span>
+                                    <SetNumberInput
+                                      value={set.reps}
+                                      min={1}
+                                      step={1}
+                                      onCommit={(reps) =>
+                                        updateSet(ex.id, set.id, {
+                                          reps,
+                                          weight: 0,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                ) : (
+                                  <>
+                                    <label className="treino-set__field">
+                                      <span>Reps</span>
+                                      <SetNumberInput
+                                        value={set.reps}
+                                        min={0}
+                                        step={1}
+                                        onCommit={(reps) =>
+                                          updateSet(ex.id, set.id, { reps })
+                                        }
+                                      />
+                                    </label>
+                                    <label className="treino-set__field">
+                                      <span>Carga</span>
+                                      <SetNumberInput
+                                        value={set.weight}
+                                        min={0}
+                                        step={0.5}
+                                        onCommit={(weight) =>
+                                          updateSet(ex.id, set.id, { weight })
+                                        }
+                                      />
+                                    </label>
+                                  </>
+                                )}
                                 <button
                                   type="button"
                                   className="treino-set__remove"
@@ -535,7 +679,7 @@ export function TreinoPage() {
                             onClick={() => addActiveSet(ex.id)}
                           >
                             <Plus size={14} />
-                            Série
+                            {ex.muscle === 'cardio' ? 'Intervalo' : 'Série'}
                           </button>
                         </motion.div>
                       )}
@@ -629,7 +773,7 @@ export function TreinoPage() {
                       <button
                         type="button"
                         className="btn btn--ghost"
-                        onClick={() => handleStart(todayTemplate)}
+                        onClick={() => requestStart(todayTemplate)}
                       >
                         <RotateCcw size={16} />
                         Refazer
@@ -640,32 +784,33 @@ export function TreinoPage() {
 
                 <div className="section-label">
                   <h2>Plano da semana</h2>
-                  <div className="treino-section-actions">
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      onClick={() => setIdleView('presets')}
-                    >
-                      <LayoutTemplate size={18} />
-                      Planos
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      onClick={() => setIdleView('progress')}
-                    >
-                      <LineChart size={18} />
-                      Progressão
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      onClick={openEditor}
-                    >
-                      <Pencil size={18} />
-                      Editar
-                    </button>
-                  </div>
+                </div>
+
+                <div className="treino-plan-toolbar" role="toolbar" aria-label="Ações do plano">
+                  <button
+                    type="button"
+                    className="treino-plan-toolbar__btn"
+                    onClick={() => setIdleView('presets')}
+                  >
+                    <LayoutTemplate size={16} />
+                    <span>Planos</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="treino-plan-toolbar__btn"
+                    onClick={() => setIdleView('progress')}
+                  >
+                    <LineChart size={16} />
+                    <span>Progressão</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="treino-plan-toolbar__btn"
+                    onClick={openEditor}
+                  >
+                    <Pencil size={16} />
+                    <span>Editar</span>
+                  </button>
                 </div>
 
                 <p className="treino-plan-hint">
@@ -695,48 +840,57 @@ export function TreinoPage() {
                           d.getDay() === template.dayOfWeek &&
                           state.weekDone[dateKey(d)],
                       )
-                      const sampleLoad = template.exercises[0]?.sets[0]?.weight
+                      const isDone = Boolean(doneDay)
+                      const cardioMins = template.exercises
+                        .filter((e) => e.muscle === 'cardio')
+                        .reduce(
+                          (sum, e) =>
+                            sum + e.sets.reduce((s, set) => s + set.reps, 0),
+                          0,
+                        )
+                      const statusLabel = isDone
+                        ? 'Feito'
+                        : isToday
+                          ? 'Hoje'
+                          : null
                       return (
                         <motion.button
                           key={template.id}
                           type="button"
-                          className={`surface surface--interactive treino-plan-card${isToday ? ' is-today' : ''}`}
+                          className={[
+                            'surface',
+                            'surface--interactive',
+                            'treino-plan-card',
+                            isToday ? 'is-today' : '',
+                            isDone ? 'is-done' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
                           variants={staggerItem}
-                          onClick={() => handleStart(template)}
+                          onClick={() => requestStart(template)}
                         >
-                          <div className="treino-plan-card__top">
-                            <span
-                              className="module-card__icon"
-                              style={{
-                                background:
-                                  'color-mix(in srgb, var(--treino) 16%, transparent)',
-                                color: 'var(--treino)',
-                              }}
-                            >
-                              <Dumbbell size={20} />
-                            </span>
-                            <span className="treino-plan-card__day">
-                              {DAY_LABELS[template.dayOfWeek]}
-                              {doneDay
-                                ? ' · feito'
-                                : isToday
-                                  ? ' · hoje'
-                                  : ''}
-                            </span>
-                          </div>
-                          <strong className="treino-plan-card__title">
-                            {template.name}
-                          </strong>
-                          <span className="treino-plan-card__meta">
-                            {template.focus}
+                          <span className="treino-plan-card__day-badge">
+                            {DAY_LABELS[template.dayOfWeek]}
                           </span>
-                          <span className="treino-plan-card__time">
-                            <Clock size={14} />
-                            ~{template.estimatedMin} min ·{' '}
-                            {template.exercises.length} exercícios
-                            {sampleLoad
-                              ? ` · base ${formatKg(sampleLoad)}`
-                              : ''}
+                          <span className="treino-plan-card__compact-main">
+                            <strong className="treino-plan-card__title">
+                              {template.name}
+                            </strong>
+                            <span className="treino-plan-card__meta">
+                              {statusLabel ? `${statusLabel} · ` : ''}
+                              {template.estimatedMin} min · {template.exercises.length} ex.
+                              {cardioMins > 0 ? ` · ${cardioMins} min cardio` : ''}
+                            </span>
+                          </span>
+                          <span
+                            className={`treino-plan-card__compact-action${isDone ? ' is-done' : ''}`}
+                            aria-hidden
+                          >
+                            {isDone ? (
+                              <Check size={13} strokeWidth={2.75} />
+                            ) : (
+                              <Play size={12} fill="currentColor" />
+                            )}
                           </span>
                         </motion.button>
                       )
@@ -748,14 +902,16 @@ export function TreinoPage() {
                     variants={staggerItem}
                     onClick={openEditor}
                   >
-                    <span className="treino-plan-card__add-icon" aria-hidden>
-                      <Plus size={22} />
+                    <span className="treino-plan-card__day-badge treino-plan-card__day-badge--add">
+                      <Plus size={16} strokeWidth={2.5} />
                     </span>
-                    <strong className="treino-plan-card__title">
-                      Adicionar treino
-                    </strong>
-                    <span className="treino-plan-card__meta">
-                      Escolhe um dia livre ou o tipo que preferires
+                    <span className="treino-plan-card__compact-main">
+                      <strong className="treino-plan-card__title">
+                        Adicionar treino
+                      </strong>
+                      <span className="treino-plan-card__meta">
+                        Dia livre ou novo tipo
+                      </span>
                     </span>
                   </motion.button>
                 </motion.div>
@@ -785,7 +941,7 @@ export function TreinoPage() {
                           key={template.id}
                           type="button"
                           className="btn btn--ghost treino-missed__btn"
-                          onClick={() => handleStart(template)}
+                          onClick={() => requestStart(template)}
                         >
                           <Play size={16} />
                           {DAY_LABELS[template.dayOfWeek]} · {template.name}
@@ -1026,5 +1182,66 @@ function StatChip({
         <strong>{value}</strong>
       </div>
     </div>
+  )
+}
+
+/** Permite campo vazio ao apagar; no blur vazio → 0. */
+function SetNumberInput({
+  value,
+  min = 0,
+  step = 1,
+  onCommit,
+}: {
+  value: number
+  min?: number
+  step?: number
+  onCommit: (n: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value))
+  const [focused, setFocused] = useState(false)
+
+  useEffect(() => {
+    if (!focused) setDraft(String(value))
+  }, [value, focused])
+
+  function commit(raw: string) {
+    const trimmed = raw.trim().replace(',', '.')
+    if (trimmed === '' || trimmed === '-' || trimmed === '.') {
+      onCommit(min)
+      setDraft(String(min))
+      return
+    }
+    const n = Number(trimmed)
+    if (!Number.isFinite(n) || n < min) {
+      onCommit(min)
+      setDraft(String(min))
+      return
+    }
+    onCommit(n)
+    setDraft(String(n))
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={focused ? draft : String(value)}
+      onFocus={() => {
+        setFocused(true)
+        setDraft(value === 0 ? '' : String(value))
+      }}
+      onChange={(e) => {
+        const next = e.target.value.replace(/[^\d.,]/g, '')
+        setDraft(next)
+        if (next.trim() === '') return
+        const n = Number(next.replace(',', '.'))
+        if (Number.isFinite(n) && n >= min) onCommit(n)
+      }}
+      onBlur={() => {
+        setFocused(false)
+        commit(draft)
+      }}
+      step={step}
+    />
   )
 }

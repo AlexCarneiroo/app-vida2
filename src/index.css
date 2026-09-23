@@ -1024,15 +1024,60 @@ a {
   text-align: center;
 }
 
-.config-hero-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  background: rgba(126, 184, 255, 0.14);
-  color: var(--rotina);
+.config-version-chip {
   flex-shrink: 0;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.1);
+  background: rgba(var(--ink-rgb), 0.06);
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 1.05rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.config-panel__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.config-panel__divider {
+  height: 1px;
+  background: rgba(var(--ink-rgb), 0.08);
+}
+
+.config-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.config-logout {
+  flex-shrink: 0;
+}
+
+.config-build {
+  margin: 0.25rem 0 1.5rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--ink-faint);
+}
+
+.config-auth {
+  display: flex;
+  flex-direction: column;
 }
 
 .config-banner {
@@ -1049,7 +1094,7 @@ a {
 
 .config-card {
   padding: 1rem;
-  margin-bottom: 1.15rem;
+  margin-bottom: 0.85rem;
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
@@ -1124,8 +1169,6 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  padding: 1.1rem 1rem;
-  margin-bottom: 1.15rem;
 }
 
 .config-theme__hint {
@@ -1180,9 +1223,6 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  padding-top: 0.85rem;
-  margin-top: 0.35rem;
-  border-top: 1px solid rgba(var(--ink-rgb), 0.08);
 }
 
 .config-accent__swatches {
@@ -1231,8 +1271,6 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0.95rem;
-  padding: 1.05rem 1rem;
-  margin-bottom: 1.15rem;
 }
 
 .config-pref__row {
@@ -1327,8 +1365,6 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 1.1rem 1rem;
-  margin-bottom: 1.15rem;
 }
 
 .config-input {
@@ -1796,6 +1832,137 @@ button.activity-map__cell:focus-visible {
 
   .activity-map__legend {
     margin-left: 0;
+  }
+}
+
+/* —— Mês: calendário em grelha 7 colunas —— */
+.activity-map--month {
+  --am-month-gap: 6px;
+}
+
+.activity-map__month-cal {
+  width: 100%;
+}
+
+.activity-map__month-dows {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--am-month-gap);
+  margin-bottom: 0.35rem;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+}
+
+.activity-map__month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--am-month-gap);
+}
+
+.activity-map__month-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  border: 0;
+  border-radius: 10px;
+  padding: 0;
+  background: rgba(var(--ink-rgb), 0.08);
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: clamp(0.72rem, 2.6vw, 0.85rem);
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.activity-map__month-day:disabled {
+  cursor: default;
+}
+
+.activity-map__month-day.is-outside {
+  opacity: 0.28;
+  background: transparent;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+.activity-map__month-day.is-future-day {
+  background: rgba(var(--ink-rgb), 0.05);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+.activity-map__month-day.level-1 {
+  background: rgba(var(--jade-deep-rgb), 0.45);
+  color: var(--ink);
+}
+
+.activity-map__month-day.level-2 {
+  background: rgba(var(--jade-rgb), 0.55);
+  color: var(--ink);
+}
+
+.activity-map__month-day.level-3 {
+  background: rgba(var(--jade-rgb), 0.78);
+  color: #06201a;
+}
+
+.activity-map__month-day.level-4 {
+  background: var(--jade);
+  color: #06201a;
+}
+
+.activity-map__month-day:not(:disabled):hover,
+.activity-map__month-day:not(:disabled):focus-visible {
+  outline: 2px solid var(--jade);
+  outline-offset: 1px;
+  transform: scale(1.04);
+}
+
+.activity-map__month-day-num {
+  line-height: 1;
+}
+
+[data-theme='light'] .activity-map__month-day {
+  background: rgba(var(--ink-rgb), 0.07);
+}
+
+[data-theme='light'] .activity-map__month-day.is-outside {
+  background: transparent;
+}
+
+[data-theme='light'] .activity-map__month-day.level-1 {
+  background: rgba(var(--jade-rgb), 0.28);
+}
+
+[data-theme='light'] .activity-map__month-day.level-2 {
+  background: rgba(var(--jade-rgb), 0.48);
+}
+
+[data-theme='light'] .activity-map__month-day.level-3 {
+  background: rgba(var(--jade-rgb), 0.7);
+}
+
+[data-theme='light'] .activity-map__month-day.level-4 {
+  background: var(--jade);
+}
+
+@media (max-width: 380px) {
+  .activity-map--month {
+    --am-month-gap: 4px;
+  }
+
+  .activity-map__month-day {
+    border-radius: 8px;
   }
 }
 
@@ -2693,13 +2860,37 @@ button.activity-map__cell:focus-visible {
 }
 
 .treino-active-head {
-  padding: 1.15rem 1.2rem;
+  padding: 1rem 1.1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.treino-active-head__top {
+  display: flex;
+  align-items: center;
+}
+
+.treino-active-back {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--jade);
+  border: 1px solid rgba(45, 212, 168, 0.22);
+  background: rgba(45, 212, 168, 0.1);
+}
+
+.treino-active-back:hover {
+  background: rgba(45, 212, 168, 0.18);
+}
+
+.treino-active-head__main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.5rem;
 }
 
 .treino-active-head__left {
@@ -2725,6 +2916,48 @@ button.activity-map__cell:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.treino-resume-banner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  border: 1px solid rgba(45, 212, 168, 0.22);
+  background: rgba(45, 212, 168, 0.08);
+}
+
+.treino-resume-banner__body {
+  min-width: 0;
+}
+
+.treino-resume-banner__body strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.treino-resume-banner__body span {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.treino-resume-banner__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--jade);
+  flex-shrink: 0;
 }
 
 .treino-exercises {
@@ -2848,6 +3081,10 @@ button.activity-map__cell:focus-visible {
   min-width: 0;
 }
 
+.treino-set__field--grow {
+  flex: 1;
+}
+
 .treino-set__field span {
   font-size: 0.65rem;
   font-weight: 700;
@@ -2881,94 +3118,151 @@ button.activity-map__cell:focus-visible {
 
 .treino-plan {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.2rem;
   grid-template-columns: 1fr;
-}
-
-@media (min-width: 640px) {
-  .treino-plan {
-    grid-template-columns: 1fr 1fr;
-  }
+  padding: 0.25rem;
+  border-radius: 14px;
+  background: rgba(var(--ink-rgb), 0.04);
+  border: 1px solid rgba(var(--ink-rgb), 0.06);
 }
 
 .treino-plan-card {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
-  padding: 1.15rem 1.1rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.38rem 0.4rem 0.38rem 0.45rem;
+  min-height: 44px;
+  border-radius: 10px;
   text-align: left;
   width: 100%;
+  overflow: hidden;
+  border-color: transparent;
+  box-shadow: none;
+  background: transparent;
+}
+
+.treino-plan-card:hover,
+.treino-plan-card:focus-visible {
+  background: rgba(var(--ink-rgb), 0.06);
+  outline: none;
 }
 
 .treino-plan-card.is-today {
-  border-color: rgba(var(--jade-rgb), 0.3);
-  box-shadow: 0 0 0 1px rgba(var(--jade-rgb), 0.12);
+  background: color-mix(in srgb, var(--treino) 8%, transparent);
 }
 
-.treino-plan-card__top {
-  width: 100%;
-  display: flex;
+.treino-plan-card.is-today::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--treino);
+}
+
+.treino-plan-card.is-done {
+  opacity: 0.78;
+}
+
+.treino-plan-card__day-badge {
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.55rem;
+  justify-content: center;
+  width: 2.05rem;
+  height: 2.05rem;
+  border-radius: 8px;
+  background: rgba(var(--ink-rgb), 0.08);
+  color: var(--ink-muted);
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.treino-plan-card__day {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+.treino-plan-card.is-today .treino-plan-card__day-badge {
+  background: color-mix(in srgb, var(--treino) 20%, transparent);
+  color: var(--treino);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--treino) 28%, transparent);
+}
+
+.treino-plan-card.is-done .treino-plan-card__day-badge {
+  background: rgba(var(--jade-rgb), 0.12);
+  color: var(--treino);
+}
+
+.treino-plan-card__day-badge--add {
+  background: rgba(var(--jade-rgb), 0.12);
+  color: var(--treino);
+  box-shadow: inset 0 0 0 1px rgba(var(--jade-rgb), 0.18);
+}
+
+.treino-plan-card__compact-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.08rem;
 }
 
 .treino-plan-card__title {
   font-family: var(--font-display);
-  font-size: 1.1rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .treino-plan-card__meta {
-  font-size: 0.85rem;
-  color: var(--ink-muted);
+  display: block;
+  font-size: 0.65rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-.treino-plan-card__time {
+.treino-plan-card__compact-action {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  margin-top: 0.55rem;
-  font-size: 0.78rem;
-  color: var(--ink-faint);
-  font-weight: 600;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--treino) 16%, transparent);
+  color: var(--treino);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--treino) 22%, transparent);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.treino-plan-card:hover .treino-plan-card__compact-action,
+.treino-plan-card:focus-visible .treino-plan-card__compact-action {
+  transform: scale(1.06);
+  background: color-mix(in srgb, var(--treino) 24%, transparent);
+}
+
+.treino-plan-card__compact-action.is-done {
+  background: rgba(var(--ink-rgb), 0.08);
+  color: var(--ink-muted);
+  box-shadow: none;
 }
 
 .treino-plan-card--add {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  min-height: 8.5rem;
   border-style: dashed;
-  border-color: rgba(var(--jade-rgb), 0.28);
-  background: rgba(var(--jade-rgb), 0.04);
-}
-
-.treino-plan-card--add:hover {
-  border-color: rgba(var(--jade-rgb), 0.45);
-  background: rgba(var(--jade-rgb), 0.08);
-}
-
-.treino-plan-card__add-icon {
-  display: grid;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  margin-bottom: 0.55rem;
-  border-radius: 12px;
-  background: rgba(var(--jade-rgb), 0.14);
-  color: var(--treino);
+  border-color: rgba(var(--ink-rgb), 0.12);
 }
 
 .treino-done-banner {
@@ -3047,10 +3341,59 @@ button.activity-map__cell:focus-visible {
   opacity: 0.7;
 }
 
+.treino-plan-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 0.55rem;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(var(--ink-rgb), 0.08);
+  border: 1px solid rgba(var(--ink-rgb), 0.08);
+}
+
+.treino-plan-toolbar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.treino-plan-toolbar__btn svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.treino-plan-toolbar__btn:hover,
+.treino-plan-toolbar__btn:focus-visible {
+  background: rgba(var(--ink-rgb), 0.08);
+  color: var(--ink);
+  outline: none;
+}
+
+.treino-plan-toolbar__btn:active {
+  background: rgba(var(--jade-rgb), 0.16);
+  color: var(--treino);
+}
+
 .treino-plan-hint {
   color: var(--ink-faint);
   font-size: 0.82rem;
-  margin: -0.35rem 0 0.85rem;
+  margin: 0 0 0.85rem;
 }
 
 .treino-plan-hint em {
@@ -3624,9 +3967,8 @@ button.activity-map__cell:focus-visible {
   }
 
   /* —— Config —— */
-  .config-hero-icon {
-    width: 48px;
-    height: 48px;
+  .config-panel {
+    padding: 1.1rem 1.05rem;
   }
 
   .config-card {
@@ -3726,35 +4068,24 @@ button.activity-map__cell:focus-visible {
     font-size: 0.9rem;
   }
 
-  .treino-section-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.5rem;
-    width: 100%;
+  .treino-plan-toolbar {
+    margin-bottom: 0.65rem;
   }
 
-  .treino-section-actions .btn {
-    width: 100%;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.3rem;
-    padding: 0.75rem 0.35rem;
-    min-height: 3.6rem;
-    font-size: 0.78rem;
-    line-height: 1.15;
-    border-radius: 14px;
-    text-align: center;
+  .treino-plan-toolbar__btn {
+    min-height: 44px;
+    font-size: 0.8rem;
+    gap: 0.35rem;
+    padding: 0.5rem 0.35rem;
   }
 
-  .treino-section-actions .btn svg {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
+  .treino-plan-toolbar__btn span {
+    white-space: nowrap;
   }
 
   .treino-plan-hint {
-    font-size: 0.94rem;
-    line-height: 1.5;
+    font-size: 0.88rem;
+    line-height: 1.45;
     margin: 0 0 0.95rem;
   }
 
@@ -3842,24 +4173,17 @@ button.activity-map__cell:focus-visible {
   }
 
   .treino-plan-card {
-    padding: 1.2rem 1.1rem;
-    gap: 0.4rem;
-  }
-
-  .treino-plan-card__day {
-    font-size: 0.8rem;
+    padding: 0.36rem 0.38rem 0.36rem 0.42rem;
+    min-height: 42px;
+    gap: 0.45rem;
   }
 
   .treino-plan-card__title {
-    font-size: 1.22rem;
+    font-size: 0.78rem;
   }
 
   .treino-plan-card__meta {
-    font-size: 0.95rem;
-  }
-
-  .treino-plan-card__time {
-    font-size: 0.88rem;
+    font-size: 0.62rem;
   }
 
   .week-day {
@@ -3926,6 +4250,10 @@ button.activity-map__cell:focus-visible {
     grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 40px;
   }
 
+  .plan-ex__set.is-cardio {
+    grid-template-columns: 28px minmax(0, 1fr) 40px;
+  }
+
   .plan-field input,
   .plan-field select {
     font-size: 1rem;
@@ -3965,16 +4293,17 @@ button.activity-map__cell:focus-visible {
 }
 
 @media (max-width: 380px) {
-  .treino-section-actions {
-    grid-template-columns: 1fr;
+  .treino-plan-toolbar__btn {
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.72rem;
+    min-height: 48px;
+    padding: 0.4rem 0.2rem;
   }
 
-  .treino-section-actions .btn {
-    flex-direction: row;
-    justify-content: center;
-    min-height: 48px;
-    font-size: 0.9rem;
-    padding: 0.75rem 1rem;
+  .treino-plan-toolbar__btn svg {
+    width: 15px;
+    height: 15px;
   }
 }
 
@@ -4399,17 +4728,6 @@ button.activity-map__cell:focus-visible {
   margin-top: 0.15rem;
 }
 
-.treino-section-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.treino-section-actions .btn {
-  padding: 0.55rem 0.9rem;
-  font-size: 0.84rem;
-}
-
 /* —— Plan editor —— */
 .plan-editor {
   display: flex;
@@ -4792,6 +5110,10 @@ button.activity-map__cell:focus-visible {
   grid-template-columns: 28px 1fr 1fr auto;
   gap: 0.45rem;
   align-items: end;
+}
+
+.plan-ex__set.is-cardio {
+  grid-template-columns: 28px 1fr auto;
 }
 
 .plan-ex__set-n {
