@@ -15,7 +15,7 @@ import {
   WORKOUT_STARTERS,
   type WorkoutStarterId,
 } from '../../data/workoutStarters'
-import type { MuscleGroup, WorkoutTemplate } from '../../types/treino'
+import type { MuscleGroup, TemplateExercise, WorkoutTemplate } from '../../types/treino'
 import { Button } from '../ui/Button'
 import { useConfirm, useToast } from '../ui/Feedback'
 
@@ -32,11 +32,7 @@ type PlanEditorProps = {
   onUpdateExercise: (
     templateId: string,
     exerciseId: string,
-    patch: Partial<{
-      name: string
-      muscle: MuscleGroup
-      notes: string
-    }>,
+    patch: Partial<Omit<TemplateExercise, 'id'>>,
   ) => void
   onRemoveExercise: (templateId: string, exerciseId: string) => void
   onAddSet: (templateId: string, exerciseId: string) => void
