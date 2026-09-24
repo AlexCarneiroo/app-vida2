@@ -1,4 +1,3 @@
-import { dateKey } from '../lib/date'
 import { uid } from '../lib/storage'
 import type {
   FoodItem,
