@@ -10,6 +10,7 @@ import { TreinoPage } from './pages/TreinoPage'
 import { FinancasPage } from './pages/FinancasPage'
 import { HabitosPage } from './pages/HabitosPage'
 import { RotinaPage } from './pages/RotinaPage'
+import { NutricaoPage } from './pages/NutricaoPage'
 import { ConfigPage } from './pages/ConfigPage'
 import { RelatorioPage } from './pages/RelatorioPage'
 
@@ -25,6 +26,7 @@ function AnimatedRoutes() {
           <Route path="financas" element={<FinancasPage />} />
           <Route path="habitos" element={<HabitosPage />} />
           <Route path="rotina" element={<RotinaPage />} />
+          <Route path="nutricao" element={<NutricaoPage />} />
           <Route path="relatorio" element={<RelatorioPage />} />
           <Route path="config" element={<ConfigPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -25,7 +25,7 @@ export default defineConfig({
       manifest: {
         name: 'VIDA',
         short_name: 'VIDA',
-        description: 'Treino, finanças, hábitos e rotina — funciona offline.',
+        description: 'Treino, finanças, hábitos, rotina e nutrição — funciona offline.',
         start_url: '/',
         scope: '/',
         display: 'standalone',

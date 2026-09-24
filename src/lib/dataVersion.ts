@@ -7,7 +7,7 @@ export type PersistedDoc<T> = {
   data: T
 }
 
-export type CloudCollection = 'treino' | 'financas' | 'habitos' | 'rotina'
+export type CloudCollection = 'treino' | 'financas' | 'habitos' | 'rotina' | 'nutricao'
 
 export function isPersistedDoc(value: unknown): value is PersistedDoc<unknown> {
   return Boolean(

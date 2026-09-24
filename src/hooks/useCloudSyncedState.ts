@@ -9,10 +9,11 @@ import { touchPersisted } from '../lib/persist'
 import { useAuth } from './useAuth'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
+import type { NutricaoState } from '../types/nutricao'
 import type { RotinaState } from '../types/rotina'
 import type { TreinoState } from '../types/treino'
 
-type AppModuleState = TreinoState | FinancasState | HabitosState | RotinaState
+type AppModuleState = TreinoState | FinancasState | HabitosState | RotinaState | NutricaoState
 
 type Options<T extends AppModuleState> = {
   collection: CloudCollection

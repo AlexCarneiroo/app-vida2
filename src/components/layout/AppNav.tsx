@@ -9,6 +9,7 @@ import {
   Repeat,
   Settings,
   Sparkles,
+  UtensilsCrossed,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -21,6 +22,7 @@ const ICONS: Record<NavPageId, typeof LayoutDashboard> = {
   financas: PiggyBank,
   habitos: Sparkles,
   rotina: Repeat,
+  nutricao: UtensilsCrossed,
   relatorio: BarChart3,
   config: Settings,
 }

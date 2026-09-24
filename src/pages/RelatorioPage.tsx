@@ -6,10 +6,12 @@ import {
   PiggyBank,
   Repeat,
   Sparkles,
+  UtensilsCrossed,
 } from 'lucide-react'
 import { PageTransition } from '../components/ui/PageTransition'
 import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
+import { useNutricao } from '../hooks/useNutricao'
 import { useRotina } from '../hooks/useRotina'
 import { useTreino } from '../hooks/useTreino'
 import { formatBRL } from '../lib/date'
@@ -32,6 +34,7 @@ export function RelatorioPage() {
   const { state: treino } = useTreino()
   const { dayLog: habitsLog, personalGoals } = useHabitos()
   const { dayLog: rotinaLog } = useRotina()
+  const { state: nutri } = useNutricao()
   const { state: finance } = useFinancas()
 
   const window = useMemo(() => rangeWindow(range), [range])
@@ -46,6 +49,10 @@ export function RelatorioPage() {
   const rotina = useMemo(
     () => sumDayLog(rotinaLog, window.startKey, window.endKey),
     [rotinaLog, window.endKey, window.startKey],
+  )
+  const food = useMemo(
+    () => sumDayLog(nutri.dayLog ?? {}, window.startKey, window.endKey),
+    [nutri.dayLog, window.endKey, window.startKey],
   )
   const money = useMemo(
     () => financeReport(finance.transactions, window.startKey, window.endKey),
@@ -125,11 +132,23 @@ export function RelatorioPage() {
             {rotina.days} dia{rotina.days === 1 ? '' : 's'} com rotina feita
           </em>
         </Link>
+
+        <Link to="/nutricao" className="surface report-card">
+          <span className="report-card__icon" style={{ color: 'var(--nutricao)' }}>
+            <UtensilsCrossed size={18} />
+          </span>
+          <strong>{food.total > 0 ? food.total.toLocaleString('pt-BR') : '0'}</strong>
+          <span>kcal registadas</span>
+          <em>
+            {food.days} dia{food.days === 1 ? '' : 's'} com prato
+            {food.days > 0 ? ` · média ${Math.round(food.total / food.days)} kcal` : ''}
+          </em>
+        </Link>
       </section>
 
       <section className="surface report-note">
         <p>
-          {treinos.sessions === 0 && habits.total === 0 && money.movements === 0
+          {treinos.sessions === 0 && habits.total === 0 && money.movements === 0 && food.total === 0
             ? 'Ainda não há movimento neste período. Treina, marca um hábito ou regista um valor — o relatório enche sozinho.'
             : range === 'week'
               ? 'Esta é a fotografia da tua semana. Se um pilar ficou atrás, é o primeiro a atacar amanhã.'

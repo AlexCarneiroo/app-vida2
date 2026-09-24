@@ -3,6 +3,7 @@ import {
   normalizeHabit,
   normalizePersonalGoal,
 } from '../data/habitosDefaults'
+import { emptyNutricaoState, rebuildDayLog } from '../data/nutricaoDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
 import { normalizeExerciseName } from './treinoStats'
 import {
@@ -13,6 +14,7 @@ import {
 } from './dataVersion'
 import type { FinancasState, SavingsGoal, Transaction } from '../types/financas'
 import type { Habit, HabitosState, PersonalGoal } from '../types/habitos'
+import type { FoodItem, MealEntry, MealSlot, NutricaoState } from '../types/nutricao'
 import type { RotinaState, RoutineBlock } from '../types/rotina'
 import type {
   ActiveWorkout,
@@ -393,6 +395,95 @@ export function migrateRotinaDoc(input: unknown): PersistedDoc<RotinaState> {
   )
 }
 
+const MEAL_IDS: MealSlot[] = ['cafe', 'almoco', 'lanche', 'jantar']
+
+function asMacros(raw: unknown) {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    kcal: Math.max(0, Number(o.kcal) || 0),
+    protein: Math.max(0, Number(o.protein) || 0),
+    carbs: Math.max(0, Number(o.carbs) || 0),
+    fat: Math.max(0, Number(o.fat) || 0),
+  }
+}
+
+function normalizeFood(raw: unknown): FoodItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<FoodItem>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const name = o.name?.trim()
+  if (!name) return null
+  return {
+    id: o.id,
+    code: o.code?.trim() || undefined,
+    name,
+    brand: o.brand?.trim() || undefined,
+    source: o.source,
+    per100: asMacros(o.per100),
+  }
+}
+
+function normalizeEntry(raw: unknown): MealEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<MealEntry>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const food = normalizeFood(o.food)
+  if (!food) return null
+  const meal = MEAL_IDS.includes(o.meal as MealSlot) ? (o.meal as MealSlot) : 'almoco'
+  return {
+    id: o.id,
+    dateKey: o.dateKey || '',
+    meal,
+    food,
+    grams: Math.max(1, Math.round(Number(o.grams) || 100)),
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+export function normalizeNutricao(raw: unknown): NutricaoState {
+  const parsed = (raw && typeof raw === 'object' ? raw : {}) as Partial<NutricaoState>
+  const base = emptyNutricaoState()
+  const entries = asArray<MealEntry>(parsed.entries)
+    .map(normalizeEntry)
+    .filter((e): e is MealEntry => Boolean(e))
+  const favorites = asArray<FoodItem>(parsed.favorites)
+    .map(normalizeFood)
+    .filter((f): f is FoodItem => Boolean(f))
+  const waterRaw =
+    parsed.waterByDay && typeof parsed.waterByDay === 'object' ? parsed.waterByDay : {}
+  const waterByDay: Record<string, number> = {}
+  for (const [k, v] of Object.entries(waterRaw)) {
+    const n = Number(v)
+    if (n > 0) waterByDay[k] = n
+  }
+  const dayLogRaw =
+    parsed.dayLog && typeof parsed.dayLog === 'object' ? parsed.dayLog : {}
+  const dayLog: Record<string, number> = { ...rebuildDayLog(entries) }
+  for (const [k, v] of Object.entries(dayLogRaw)) {
+    const n = Number(v)
+    if (n > 0) dayLog[k] = Math.max(dayLog[k] ?? 0, n)
+  }
+  return {
+    kcalGoal: Math.max(800, Number(parsed.kcalGoal) || base.kcalGoal),
+    proteinGoal: Math.max(20, Number(parsed.proteinGoal) || base.proteinGoal),
+    carbsGoal: Math.max(20, Number(parsed.carbsGoal) || base.carbsGoal),
+    fatGoal: Math.max(15, Number(parsed.fatGoal) || base.fatGoal),
+    waterGoal: Math.max(4, Math.min(16, Number(parsed.waterGoal) || base.waterGoal)),
+    entries,
+    favorites,
+    waterByDay,
+    dayLog,
+  }
+}
+
+export function migrateNutricaoDoc(input: unknown): PersistedDoc<NutricaoState> {
+  return migrateEnvelope(
+    input,
+    normalizeNutricao,
+    (o) => 'entries' in o || 'kcalGoal' in o,
+  )
+}
+
 export function mergeHabitosSafe(
   local: HabitosState,
   remote: HabitosState,
@@ -496,6 +587,51 @@ export function mergeRotinaSafe(
       ? remote.dayKey || local.dayKey
       : local.dayKey || remote.dayKey,
     blocks: [...map.values()].sort((a, b) => a.time.localeCompare(b.time)),
+    dayLog,
+  }
+}
+
+export function mergeNutricaoSafe(
+  local: NutricaoState,
+  remote: NutricaoState,
+  preferRemote: boolean,
+): NutricaoState {
+  const entryMap = new Map<string, MealEntry>()
+  const primary = preferRemote ? remote.entries : local.entries
+  const secondary = preferRemote ? local.entries : remote.entries
+  for (const e of secondary) entryMap.set(e.id, e)
+  for (const e of primary) entryMap.set(e.id, e)
+
+  const favMap = new Map<string, FoodItem>()
+  const favPrimary = preferRemote ? remote.favorites : local.favorites
+  const favSecondary = preferRemote ? local.favorites : remote.favorites
+  for (const f of favSecondary) favMap.set(f.id, f)
+  for (const f of favPrimary) favMap.set(f.id, f)
+
+  const waterByDay: Record<string, number> = { ...(local.waterByDay ?? {}) }
+  for (const [k, v] of Object.entries(remote.waterByDay ?? {})) {
+    waterByDay[k] = Math.max(waterByDay[k] ?? 0, v)
+  }
+
+  const entries = [...entryMap.values()]
+  const dayLog = rebuildDayLog(entries)
+  for (const [k, v] of Object.entries(local.dayLog ?? {})) {
+    dayLog[k] = Math.max(dayLog[k] ?? 0, v)
+  }
+  for (const [k, v] of Object.entries(remote.dayLog ?? {})) {
+    dayLog[k] = Math.max(dayLog[k] ?? 0, v)
+  }
+
+  const goals = preferRemote ? remote : local
+  return {
+    kcalGoal: goals.kcalGoal,
+    proteinGoal: goals.proteinGoal,
+    carbsGoal: goals.carbsGoal,
+    fatGoal: goals.fatGoal,
+    waterGoal: goals.waterGoal,
+    entries,
+    favorites: [...favMap.values()],
+    waterByDay,
     dayLog,
   }
 }

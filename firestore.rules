@@ -5,7 +5,7 @@ service cloud.firestore {
     match /users/{userId}/app/{docId} {
       allow read, write: if request.auth != null
         && request.auth.uid == userId
-        && docId in ['treino', 'financas', 'profile', 'habitos', 'rotina'];
+        && docId in ['treino', 'financas', 'profile', 'habitos', 'rotina', 'nutricao'];
     }
   }
 }

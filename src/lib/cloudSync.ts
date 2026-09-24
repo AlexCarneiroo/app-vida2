@@ -16,25 +16,29 @@ import {
 import {
   mergeFinancasSafe,
   mergeHabitosSafe,
+  mergeNutricaoSafe,
   mergeRotinaSafe,
   mergeTreinoSafe,
   migrateFinancasDoc,
   migrateHabitosDoc,
+  migrateNutricaoDoc,
   migrateRotinaDoc,
   migrateTreinoDoc,
 } from './migrate'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
+import type { NutricaoState } from '../types/nutricao'
 import type { RotinaState } from '../types/rotina'
 import type { TreinoState } from '../types/treino'
 
-type AppModuleState = TreinoState | FinancasState | HabitosState | RotinaState
+type AppModuleState = TreinoState | FinancasState | HabitosState | RotinaState | NutricaoState
 
 type SyncMeta = {
   treinoUpdatedAt: number
   financasUpdatedAt: number
   habitosUpdatedAt: number
   rotinaUpdatedAt: number
+  nutricaoUpdatedAt: number
   uid: string | null
   schemaVersion: number
 }
@@ -84,6 +88,7 @@ function readMeta(): SyncMeta {
     financasUpdatedAt: 0,
     habitosUpdatedAt: 0,
     rotinaUpdatedAt: 0,
+    nutricaoUpdatedAt: 0,
     uid: null,
     schemaVersion: SCHEMA_VERSION,
   })
@@ -148,6 +153,8 @@ function migrateCloudEnvelope(
       return migrateHabitosDoc(raw)
     case 'rotina':
       return migrateRotinaDoc(raw)
+    case 'nutricao':
+      return migrateNutricaoDoc(raw)
   }
 }
 
@@ -301,6 +308,13 @@ export async function hydrateFromCloud<T extends AppModuleState>(
         preferRemote,
       ) as T
       break
+    case 'nutricao':
+      mergedData = mergeNutricaoSafe(
+        localDoc.data as NutricaoState,
+        cloudTyped.data as NutricaoState,
+        preferRemote,
+      ) as T
+      break
     default:
       mergedData = mergeTreinoSafe(
         localDoc.data as TreinoState,
@@ -350,4 +364,4 @@ export function flushCloudSave<T>(
   return pushCloudDoc(collection, data, updatedAt)
 }
 
-export type { TreinoState, FinancasState, HabitosState, RotinaState, PersistedDoc }
+export type { TreinoState, FinancasState, HabitosState, RotinaState, NutricaoState, PersistedDoc }

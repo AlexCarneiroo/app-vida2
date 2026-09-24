@@ -8,6 +8,7 @@ import {
   Play,
   Repeat,
   Sparkles,
+  UtensilsCrossed,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
@@ -20,6 +21,7 @@ import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { useAuth } from '../hooks/useAuth'
 import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
+import { useNutricao } from '../hooks/useNutricao'
 import { useRotina } from '../hooks/useRotina'
 import { useTreino } from '../hooks/useTreino'
 import { coachLine, useMotivation } from '../hooks/useMotivation'
@@ -63,6 +65,8 @@ export function HomePage() {
   } = useRotina()
   const { stats: financeStats, monthTransactions, state: financeState, monthLabel } =
     useFinancas()
+  const { todayMacros, todayEntries, state: nutriState } = useNutricao()
+  const nutriLog = nutriState.dayLog ?? {}
   const goals = financeState.goals
 
   const activityLog = useMemo(
@@ -70,10 +74,11 @@ export function HomePage() {
       mergeDayLogs(
         habitsLog,
         rotinaLog,
+        nutriLog,
         treinoDayLog(state.history),
         financasDayLog(financeState.transactions),
       ),
-    [habitsLog, rotinaLog, state.history, financeState.transactions],
+    [habitsLog, rotinaLog, nutriLog, state.history, financeState.transactions],
   )
 
   const [now, setNow] = useState(() => new Date())
@@ -111,10 +116,14 @@ export function HomePage() {
     todayTemplate || state.active || isTodayDone ? 1 : 0
   const treinoDonePoints = isTodayDone || (state.active && stats.progress >= 100) ? 1 : state.active ? stats.progress / 100 : 0
 
+  const nutriGoal = Math.max(1, nutriState.kcalGoal)
   const dayParts = [
     { total: habitsTotal, done: coveredCount },
     { total: rotinaTotal, done: rotinaDone },
     { total: treinoPoints, done: treinoDonePoints },
+    ...(todayEntries.length > 0
+      ? [{ total: 1, done: Math.min(1, todayMacros.kcal / nutriGoal) }]
+      : []),
   ]
   const dayTotal = dayParts.reduce((a, p) => a + p.total, 0)
   const dayDone = dayParts.reduce((a, p) => a + p.done, 0)
@@ -225,6 +234,20 @@ export function HomePage() {
         iconBg: 'rgba(126, 184, 255, 0.16)',
         iconFg: 'var(--rotina)',
       },
+      {
+        to: '/nutricao',
+        title: 'Nutrição',
+        desc:
+          todayMacros.kcal > 0
+            ? `${todayMacros.kcal} kcal · ${Math.round(todayMacros.protein)}g proteína`
+            : 'Diário vazio — abre o prato',
+        meta: todayMacros.kcal > 0 ? `${todayMacros.kcal}` : '—',
+        progress: Math.min(100, Math.round((todayMacros.kcal / nutriGoal) * 100)),
+        icon: UtensilsCrossed,
+        bar: 'var(--nutricao)',
+        iconBg: 'rgba(242, 166, 90, 0.16)',
+        iconFg: 'var(--nutricao)',
+      },
     ],
     [
       treinoDesc,
@@ -238,6 +261,8 @@ export function HomePage() {
       coveredCount,
       rotinaTotal,
       rotinaDone,
+      todayMacros,
+      nutriGoal,
     ],
   )
 
@@ -381,6 +406,16 @@ export function HomePage() {
               <span>
                 <strong>Rotina</strong>
                 <em>Blocos do dia</em>
+              </span>
+              <ArrowUpRight size={16} />
+            </Link>
+            <Link to="/nutricao" className="home-start">
+              <span className="home-start__icon" style={{ color: 'var(--nutricao)' }}>
+                <UtensilsCrossed size={18} />
+              </span>
+              <span>
+                <strong>Nutrição</strong>
+                <em>Registar o prato</em>
               </span>
               <ArrowUpRight size={16} />
             </Link>

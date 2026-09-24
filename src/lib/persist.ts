@@ -1,6 +1,7 @@
 import {
   migrateFinancasDoc,
   migrateHabitosDoc,
+  migrateNutricaoDoc,
   migrateRotinaDoc,
   migrateTreinoDoc,
 } from './migrate'
@@ -12,6 +13,7 @@ import {
 } from './dataVersion'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
+import type { NutricaoState } from '../types/nutricao'
 import type { RotinaState } from '../types/rotina'
 import type { TreinoState } from '../types/treino'
 
@@ -72,6 +74,10 @@ export function loadHabitosPersisted(key: string, fallback: HabitosState) {
 
 export function loadRotinaPersisted(key: string, fallback: RotinaState) {
   return loadWithMigrate(key, fallback, migrateRotinaDoc)
+}
+
+export function loadNutricaoPersisted(key: string, fallback: NutricaoState) {
+  return loadWithMigrate(key, fallback, migrateNutricaoDoc)
 }
 
 export function savePersisted<T>(key: string, doc: PersistedDoc<T>) {
