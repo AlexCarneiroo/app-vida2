@@ -16,22 +16,35 @@ import {
 import {
   mergeFinancasSafe,
   mergeHabitosSafe,
+  mergeJogosSafe,
   mergeNutricaoSafe,
   mergeRotinaSafe,
+  mergeSaudeSafe,
   mergeTreinoSafe,
   migrateFinancasDoc,
   migrateHabitosDoc,
+  migrateJogosDoc,
   migrateNutricaoDoc,
   migrateRotinaDoc,
+  migrateSaudeDoc,
   migrateTreinoDoc,
 } from './migrate'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
+import type { JogosState } from '../types/jogos'
 import type { NutricaoState } from '../types/nutricao'
 import type { RotinaState } from '../types/rotina'
+import type { SaudeState } from '../types/saude'
 import type { TreinoState } from '../types/treino'
 
-type AppModuleState = TreinoState | FinancasState | HabitosState | RotinaState | NutricaoState
+type AppModuleState =
+  | TreinoState
+  | FinancasState
+  | HabitosState
+  | RotinaState
+  | NutricaoState
+  | SaudeState
+  | JogosState
 
 type SyncMeta = {
   treinoUpdatedAt: number
@@ -39,6 +52,8 @@ type SyncMeta = {
   habitosUpdatedAt: number
   rotinaUpdatedAt: number
   nutricaoUpdatedAt: number
+  saudeUpdatedAt: number
+  jogosUpdatedAt: number
   uid: string | null
   schemaVersion: number
 }
@@ -89,6 +104,8 @@ function readMeta(): SyncMeta {
     habitosUpdatedAt: 0,
     rotinaUpdatedAt: 0,
     nutricaoUpdatedAt: 0,
+    saudeUpdatedAt: 0,
+    jogosUpdatedAt: 0,
     uid: null,
     schemaVersion: SCHEMA_VERSION,
   })
@@ -155,6 +172,10 @@ function migrateCloudEnvelope(
       return migrateRotinaDoc(raw)
     case 'nutricao':
       return migrateNutricaoDoc(raw)
+    case 'saude':
+      return migrateSaudeDoc(raw)
+    case 'jogos':
+      return migrateJogosDoc(raw)
   }
 }
 
@@ -312,6 +333,20 @@ export async function hydrateFromCloud<T extends AppModuleState>(
       mergedData = mergeNutricaoSafe(
         localDoc.data as NutricaoState,
         cloudTyped.data as NutricaoState,
+        preferRemote,
+      ) as T
+      break
+    case 'saude':
+      mergedData = mergeSaudeSafe(
+        localDoc.data as SaudeState,
+        cloudTyped.data as SaudeState,
+        preferRemote,
+      ) as T
+      break
+    case 'jogos':
+      mergedData = mergeJogosSafe(
+        localDoc.data as JogosState,
+        cloudTyped.data as JogosState,
         preferRemote,
       ) as T
       break

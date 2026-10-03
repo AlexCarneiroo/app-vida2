@@ -54,6 +54,16 @@ export function formatDateBR(key: string) {
   return `${d}/${m}/${y}`
 }
 
+/** Exibe YYYY-MM como "Março de 2026". */
+export function formatMonthLabel(monthKey: string) {
+  const [y, m] = monthKey.split('-').map(Number)
+  const label = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+  })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 /** Aceita 10,50 / 1.234,56 / 10.5 enquanto o utilizador digita. */
 export function parseBRLInput(raw: string): number | null {
   let s = raw.trim().replace(/r\$\s?/gi, '').replace(/\s/g, '')

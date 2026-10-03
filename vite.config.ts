@@ -16,6 +16,19 @@ export default defineConfig({
   define: {
     'import.meta.env.VITE_APP_RELEASE': JSON.stringify(appRelease()),
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/firebase')) return 'firebase'
+          if (id.includes('node_modules/framer-motion')) return 'motion'
+          if (id.includes('node_modules/lucide-react')) return 'icons'
+          if (id.includes('node_modules/jspdf')) return 'jspdf'
+          if (id.includes('node_modules/pdfjs-dist')) return 'pdfjs'
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     babel({ presets: [reactCompilerPreset()] }),

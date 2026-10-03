@@ -1,6 +1,12 @@
 import type { MuscleGroup, WorkoutTemplate } from '../types/treino'
 import { clonePresetPlan, getPresetById } from './planPresets'
 
+export {
+  DAY_LABELS,
+  DAY_NAMES,
+  PLAN_DAY_ORDER,
+} from './dayLabels'
+
 export const MUSCLE_GROUPS: MuscleGroup[] = [
   'peito',
   'costas',
@@ -21,18 +27,3 @@ export function clonePlan(plan: WorkoutTemplate[]): WorkoutTemplate[] {
 export const WEEKLY_PLAN: WorkoutTemplate[] = clonePresetPlan(
   getPresetById('ppl-classic')!,
 )
-
-export const DAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'] as const
-
-export const DAY_NAMES = [
-  'Domingo',
-  'Segunda',
-  'Terça',
-  'Quarta',
-  'Quinta',
-  'Sexta',
-  'Sábado',
-] as const
-
-/** Ordem de montagem do plano: Seg → Dom */
-export const PLAN_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const

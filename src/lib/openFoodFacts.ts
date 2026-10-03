@@ -1,6 +1,16 @@
-import { TACO_FOODS } from '../data/tacoFoods'
 import { scaleMacros } from '../data/nutricaoDefaults'
 import type { FoodItem, FoodMacros } from '../types/nutricao'
+
+type TacoFood = FoodItem
+let tacoCache: TacoFood[] | null = null
+
+async function loadTacoFoods() {
+  if (!tacoCache) {
+    const mod = await import('../data/tacoFoods')
+    tacoCache = mod.TACO_FOODS
+  }
+  return tacoCache
+}
 
 type OffNutriments = Record<string, unknown>
 
@@ -138,9 +148,13 @@ function mapUsda(food: UsdaFood): FoodItem | null {
   }
 }
 
-export function searchTaco(query: string, limit = 40): FoodItem[] {
+export async function searchTaco(
+  query: string,
+  limit = 40,
+): Promise<FoodItem[]> {
   const q = fold(query)
   if (q.length < 2) return []
+  const TACO_FOODS = await loadTacoFoods()
   const tokens = q.split(/\s+/).filter((t) => t.length >= 2)
   const starts: FoodItem[] = []
   const phrase: FoodItem[] = []
@@ -150,8 +164,10 @@ export function searchTaco(query: string, limit = 40): FoodItem[] {
     const brand = fold(item.brand || '')
     const hay = `${name} ${brand}`
     if (name.startsWith(q) || name.includes(`, ${q}`)) starts.push(item)
-    else if (hay.includes(q) || tokens.every((t) => hay.includes(t))) phrase.push(item)
-    else if (tokens.some((t) => name.includes(t) || brand.includes(t))) partial.push(item)
+    else if (hay.includes(q) || tokens.every((t) => hay.includes(t)))
+      phrase.push(item)
+    else if (tokens.some((t) => name.includes(t) || brand.includes(t)))
+      partial.push(item)
   }
   return rankFoods([...starts, ...phrase, ...partial], query).slice(0, limit)
 }
@@ -265,14 +281,17 @@ export async function searchFoods(
   query: string,
   signal?: AbortSignal,
 ): Promise<FoodSearchResult> {
-  const taco = searchTaco(query)
-  const remote = await Promise.allSettled([
-    searchOpenFoodFacts(query, signal),
-    searchUsdaFoods(query, signal),
+  const [taco, remote] = await Promise.all([
+    searchTaco(query),
+    Promise.allSettled([
+      searchOpenFoodFacts(query, signal),
+      searchUsdaFoods(query, signal),
+    ]),
   ])
   const off = remote[0].status === 'fulfilled' ? remote[0].value : []
   const usda = remote[1].status === 'fulfilled' ? remote[1].value : []
-  const remoteDown = remote[0].status === 'rejected' && remote[1].status === 'rejected'
+  const remoteDown =
+    remote[0].status === 'rejected' && remote[1].status === 'rejected'
   if (remoteDown && taco.length === 0 && off.length === 0 && usda.length === 0) {
     throw new Error('food-search')
   }

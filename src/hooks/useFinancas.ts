@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { emptyFinancasState } from '../data/financasDefaults'
+import {
+  clampBillDay,
+  emptyFinancasState,
+  normalizeBill,
+  normalizeBudget,
+  type BillInput,
+} from '../data/financasDefaults'
+import {
+  activeBillsTotal,
+  billsDueTodayOrTomorrow,
+  getBillStatus,
+  overdueBills,
+  sortBills,
+  upcomingBillCalendar,
+} from '../lib/billStatus'
 import { dateKey } from '../lib/date'
 import {
   flushCloudSave,
@@ -13,10 +27,20 @@ import type {
   FinanceCategory,
   FinancasState,
   MonthStats,
+  RecurringBill,
   SavingsGoal,
   Transaction,
   TxType,
 } from '../types/financas'
+
+export type BudgetProgress = {
+  id: string
+  category: FinanceCategory
+  limit: number
+  spent: number
+  pct: number
+  remaining: number
+}
 
 const STORAGE_KEY = 'vida.financas.v1'
 
@@ -52,7 +76,11 @@ export function useFinancas() {
       const next = await hydrateFromCloud(
         'financas',
         localAtStart,
-        (d) => d.transactions.length === 0 && d.goals.length === 0,
+        (d) =>
+          d.transactions.length === 0 &&
+          d.goals.length === 0 &&
+          (d.bills?.length ?? 0) === 0 &&
+          (d.budgets?.length ?? 0) === 0,
       )
       if (cancelled) return
       const latestLocal = loadFinancasPersisted(STORAGE_KEY, emptyFinancasState)
@@ -64,7 +92,11 @@ export function useFinancas() {
         finalDoc = await hydrateFromCloud(
           'financas',
           latestLocal,
-          (d) => d.transactions.length === 0 && d.goals.length === 0,
+          (d) =>
+            d.transactions.length === 0 &&
+            d.goals.length === 0 &&
+            (d.bills?.length ?? 0) === 0 &&
+            (d.budgets?.length ?? 0) === 0,
         )
       }
       if (cancelled) return
@@ -240,6 +272,177 @@ export function useFinancas() {
     }))
   }, [])
 
+  const addBill = useCallback((input: BillInput) => {
+    const bill = normalizeBill({
+      id: makeId('bill'),
+      name: input.name,
+      amount: input.amount,
+      dayOfMonth: clampBillDay(input.dayOfMonth),
+      category: input.category,
+      active: input.active !== false,
+      lastPaidMonth: null,
+      createdAt: new Date().toISOString(),
+    })
+    setState((prev) => ({
+      ...prev,
+      bills: [...(prev.bills ?? []), bill],
+    }))
+    return bill.id
+  }, [])
+
+  const updateBill = useCallback(
+    (id: string, patch: Partial<BillInput> & { active?: boolean }) => {
+      setState((prev) => ({
+        ...prev,
+        bills: (prev.bills ?? []).map((b) => {
+          if (b.id !== id) return b
+          return normalizeBill({
+            ...b,
+            ...patch,
+            dayOfMonth:
+              patch.dayOfMonth != null
+                ? clampBillDay(patch.dayOfMonth)
+                : b.dayOfMonth,
+          })
+        }),
+      }))
+    },
+    [],
+  )
+
+  const removeBill = useCallback((id: string) => {
+    setState((prev) => ({
+      ...prev,
+      bills: (prev.bills ?? []).filter((b) => b.id !== id),
+    }))
+  }, [])
+
+  /** Marca pago este mês e cria movimento de saída. */
+  const markBillPaid = useCallback((id: string) => {
+    let paid: RecurringBill | null = null
+    setState((prev) => {
+      const bill = (prev.bills ?? []).find((b) => b.id === id)
+      if (!bill || !bill.active) return prev
+      paid = bill
+      const month = monthPrefix()
+      const today = dateKey()
+      const day = String(bill.dayOfMonth).padStart(2, '0')
+      const renewKey = `${month}-${day}`
+      // Usa o dia da renovação se ainda não passou; senão hoje
+      const payDate = renewKey <= today ? today : renewKey
+
+      const tx: Transaction = {
+        id: makeId('tx'),
+        type: 'expense',
+        amount: bill.amount,
+        category: bill.category,
+        note: bill.name,
+        dateKey: payDate,
+        createdAt: new Date().toISOString(),
+      }
+
+      return {
+        ...prev,
+        bills: (prev.bills ?? []).map((b) =>
+          b.id === id ? { ...b, lastPaidMonth: month } : b,
+        ),
+        transactions: [tx, ...prev.transactions].slice(0, 500),
+      }
+    })
+    return paid
+  }, [])
+
+  const bills = useMemo(
+    () => sortBills(state.bills ?? []),
+    [state.bills],
+  )
+
+  const billsMonthlyTotal = useMemo(
+    () => activeBillsTotal(state.bills ?? []),
+    [state.bills],
+  )
+
+  const billsOverdue = useMemo(
+    () => overdueBills(state.bills ?? []),
+    [state.bills],
+  )
+
+  const billsDueSoonAlert = useMemo(
+    () => billsDueTodayOrTomorrow(state.bills ?? []),
+    [state.bills],
+  )
+
+  const billsCalendar7 = useMemo(
+    () => upcomingBillCalendar(state.bills ?? [], 7),
+    [state.bills],
+  )
+
+  const billsCalendar30 = useMemo(
+    () => upcomingBillCalendar(state.bills ?? [], 30),
+    [state.bills],
+  )
+
+  const upsertBudget = useCallback(
+    (category: FinanceCategory, limit: number) => {
+      const clean = Math.max(1, limit)
+      setState((prev) => {
+        const list = prev.budgets ?? []
+        const existing = list.find((b) => b.category === category)
+        if (existing) {
+          return {
+            ...prev,
+            budgets: list.map((b) =>
+              b.category === category
+                ? normalizeBudget({ ...b, limit: clean })
+                : b,
+            ),
+          }
+        }
+        return {
+          ...prev,
+          budgets: [
+            ...list,
+            normalizeBudget({
+              id: makeId('budget'),
+              category,
+              limit: clean,
+            }),
+          ],
+        }
+      })
+    },
+    [],
+  )
+
+  const removeBudget = useCallback((id: string) => {
+    setState((prev) => ({
+      ...prev,
+      budgets: (prev.budgets ?? []).filter((b) => b.id !== id),
+    }))
+  }, [])
+
+  const budgetProgress: BudgetProgress[] = useMemo(() => {
+    const spentMap = new Map<FinanceCategory, number>()
+    for (const t of monthTransactions) {
+      if (t.type !== 'expense') continue
+      spentMap.set(t.category, (spentMap.get(t.category) ?? 0) + t.amount)
+    }
+    return (state.budgets ?? [])
+      .map((b) => {
+        const spent = spentMap.get(b.category) ?? 0
+        const pct = Math.min(999, Math.round((spent / b.limit) * 100))
+        return {
+          id: b.id,
+          category: b.category,
+          limit: b.limit,
+          spent,
+          pct,
+          remaining: Math.max(0, b.limit - spent),
+        }
+      })
+      .sort((a, b) => b.pct - a.pct)
+  }, [state.budgets, monthTransactions])
+
   const shiftMonth = useCallback((delta: number) => {
     setMonthKey((prev) => {
       const [y, m] = prev.split('-').map(Number)
@@ -263,6 +466,14 @@ export function useFinancas() {
     monthLabel,
     monthTransactions,
     stats,
+    bills,
+    billsMonthlyTotal,
+    billsOverdue,
+    billsDueSoonAlert,
+    billsCalendar7,
+    billsCalendar30,
+    budgetProgress,
+    getBillStatus,
     addTransaction,
     removeTransaction,
     importTransactions,
@@ -270,6 +481,12 @@ export function useFinancas() {
     addGoal,
     updateGoalSaved,
     removeGoal,
+    addBill,
+    updateBill,
+    removeBill,
+    markBillPaid,
+    upsertBudget,
+    removeBudget,
     shiftMonth,
   }
 }

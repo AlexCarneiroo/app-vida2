@@ -6,6 +6,7 @@ import {
   staggerContainer,
   staggerItem,
 } from '../components/ui/PageTransition'
+import { PageHeader, PageScreens } from '../components/ui/PageShell'
 import { Button } from '../components/ui/Button'
 import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { useConfirm, useToast } from '../components/ui/Feedback'
@@ -26,10 +27,23 @@ export function RotinaPage() {
   const { confirm } = useConfirm()
   const { busy: saving, run: runSave } = useBusyAction()
   const [removingId, setRemovingId] = useState<string | null>(null)
-  const [showForm, setShowForm] = useState(false)
+  const [view, setView] = useState<'home' | 'new'>('home')
   const [time, setTime] = useState('08:00')
   const [title, setTitle] = useState('')
   const [detail, setDetail] = useState('')
+
+  function openCreate() {
+    setTime('08:00')
+    setTitle('')
+    setDetail('')
+    setView('new')
+  }
+
+  function closePanel() {
+    setView('home')
+    setTitle('')
+    setDetail('')
+  }
 
   function handleAdd(e: FormEvent) {
     e.preventDefault()
@@ -38,7 +52,7 @@ export function RotinaPage() {
       addBlock(time, title, detail)
       setTitle('')
       setDetail('')
-      setShowForm(false)
+      setView('home')
       toast('Bloco adicionado', 'ok')
     })
   }
@@ -59,150 +73,179 @@ export function RotinaPage() {
     }
   }
 
+  const onPanel = view !== 'home'
+
   return (
     <PageTransition>
-      <header className="page-header">
-        <div>
-          <p className="page-kicker">Ritmo</p>
-          <h1 className="page-title">Rotina</h1>
-          <p className="page-sub">
-            Blocos do dia com hora. Estrutura pronta para evoluir depois.
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          icon={<Plus size={16} />}
-          onClick={() => setShowForm((v) => !v)}
-          disabled={saving}
-        >
-          {showForm ? 'Fechar' : 'Novo'}
-        </Button>
-      </header>
-
-      <div className="surface module-stat">
-        <span className="module-stat__icon" style={{ color: 'var(--rotina)' }}>
-          <Repeat size={18} />
-        </span>
-        <div>
-          <strong>
-            {doneCount}/{total} blocos
-          </strong>
-          <span>
-            {total === 0
-              ? 'Monta a linha do dia'
-              : doneCount === total
-                ? 'Rotina do dia feita'
-                : 'Segue o ritmo'}
-          </span>
-        </div>
-      </div>
-
-      <ActivityHeatmap log={dayLog} title="Rotina no ano" />
-
-      {showForm && (
-        <form className="surface config-form" onSubmit={handleAdd}>
-          <div className="finance-form__grid">
-            <label className="plan-field">
-              <span>Hora</span>
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                required
-                disabled={saving}
-              />
-            </label>
-            <label className="plan-field plan-field--grow">
-              <span>Título</span>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex.: Bloco profundo"
-                required
-                disabled={saving}
-              />
-            </label>
-            <label className="plan-field plan-field--grow">
-              <span>Detalhe</span>
-              <input
-                type="text"
-                value={detail}
-                onChange={(e) => setDetail(e.target.value)}
-                placeholder="Ex.: 90 min sem notificações"
-                disabled={saving}
-              />
-            </label>
-          </div>
+      <PageHeader
+        kicker="Ritmo"
+        title={onPanel ? 'Novo bloco' : 'Rotina'}
+        sub={
+          onPanel
+            ? 'Define hora, título e um detalhe opcional.'
+            : 'Blocos do dia com hora. Estrutura pronta para evoluir depois.'
+        }
+        onBack={onPanel ? closePanel : undefined}
+        action={
           <Button
-            type="submit"
             variant="primary"
             icon={<Plus size={16} />}
-            loading={saving}
-            loadingLabel="A guardar…"
+            onClick={openCreate}
+            disabled={saving}
           >
-            Guardar bloco
+            Novo
           </Button>
-        </form>
-      )}
+        }
+      />
 
-      <div className="section-label">
-        <h2>Linha do dia</h2>
-        <span>{total}</span>
-      </div>
+      <PageScreens
+        mode={view}
+        home={
+          <>
+            <div className="surface module-stat">
+              <span
+                className="module-stat__icon"
+                style={{ color: 'var(--rotina)' }}
+              >
+                <Repeat size={18} />
+              </span>
+              <div>
+                <strong>
+                  {doneCount}/{total} blocos
+                </strong>
+                <span>
+                  {total === 0
+                    ? 'Monta a linha do dia'
+                    : doneCount === total
+                      ? 'Rotina do dia feita'
+                      : 'Segue o ritmo'}
+                </span>
+              </div>
+            </div>
 
-      {blocks.length === 0 ? (
-        <div className="surface finance-empty">
-          <Repeat size={24} />
-          <p>Ainda sem blocos. Adiciona o primeiro.</p>
-        </div>
-      ) : (
-        <motion.div
-          className="timeline"
-          variants={staggerContainer}
-          initial="hidden"
-          animate="show"
-        >
-          {blocks.map((b) => (
-            <motion.div
-              key={b.id}
-              className={`surface timeline-item${b.doneToday ? ' is-done' : ''}`}
-              variants={staggerItem}
-            >
+            <ActivityHeatmap log={dayLog} title="Rotina no ano" />
+
+            <div className="section-label">
+              <h2>Linha do dia</h2>
+              <span>{total}</span>
+            </div>
+
+            {blocks.length === 0 ? (
+              <div className="surface finance-empty">
+                <Repeat size={24} />
+                <p>Ainda sem blocos. Adiciona o primeiro.</p>
+              </div>
+            ) : (
+              <motion.div
+                className="timeline"
+                variants={staggerContainer}
+                initial="hidden"
+                animate="show"
+              >
+                {blocks.map((b) => (
+                  <motion.div
+                    key={b.id}
+                    className={`surface timeline-item${b.doneToday ? ' is-done' : ''}`}
+                    variants={staggerItem}
+                  >
+                    <button
+                      type="button"
+                      className={`habit-check${b.doneToday ? ' is-done' : ''}`}
+                      onClick={() => {
+                        toggleBlock(b.id)
+                        toast(
+                          b.doneToday ? 'Bloco desmarcado' : 'Bloco concluído',
+                          'ok',
+                        )
+                      }}
+                      aria-label={
+                        b.doneToday
+                          ? `Desmarcar ${b.title}`
+                          : `Concluir ${b.title}`
+                      }
+                    >
+                      {b.doneToday && <Check size={16} strokeWidth={3} />}
+                    </button>
+                    <time>{b.time}</time>
+                    <div>
+                      <strong>{b.title}</strong>
+                      <span>
+                        {b.detail || (b.doneToday ? 'Feito' : 'Pendente')}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      className="finance-row__del"
+                      icon={<Trash2 size={14} />}
+                      loading={removingId === b.id}
+                      onClick={() => handleRemove(b.id, b.title)}
+                      title="Excluir"
+                      aria-label={`Excluir ${b.title}`}
+                    />
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </>
+        }
+        panel={
+          <form className="surface config-form" onSubmit={handleAdd}>
+            <div className="finance-form__grid">
+              <label className="plan-field">
+                <span>Hora</span>
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  required
+                  disabled={saving}
+                  autoFocus
+                />
+              </label>
+              <label className="plan-field plan-field--grow">
+                <span>Título</span>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex.: Bloco profundo"
+                  required
+                  disabled={saving}
+                />
+              </label>
+              <label className="plan-field plan-field--grow">
+                <span>Detalhe</span>
+                <input
+                  type="text"
+                  value={detail}
+                  onChange={(e) => setDetail(e.target.value)}
+                  placeholder="Ex.: 90 min sem notificações"
+                  disabled={saving}
+                />
+              </label>
+            </div>
+            <div className="habit-form__actions">
               <button
                 type="button"
-                className={`habit-check${b.doneToday ? ' is-done' : ''}`}
-                onClick={() => {
-                  toggleBlock(b.id)
-                  toast(
-                    b.doneToday ? 'Bloco desmarcado' : 'Bloco concluído',
-                    'ok',
-                  )
-                }}
-                aria-label={
-                  b.doneToday ? `Desmarcar ${b.title}` : `Concluir ${b.title}`
-                }
+                className="btn btn--ghost"
+                onClick={closePanel}
+                disabled={saving}
               >
-                {b.doneToday && <Check size={16} strokeWidth={3} />}
+                Cancelar
               </button>
-              <time>{b.time}</time>
-              <div>
-                <strong>{b.title}</strong>
-                <span>{b.detail || (b.doneToday ? 'Feito' : 'Pendente')}</span>
-              </div>
               <Button
-                variant="ghost"
-                className="finance-row__del"
-                icon={<Trash2 size={14} />}
-                loading={removingId === b.id}
-                onClick={() => handleRemove(b.id, b.title)}
-                title="Excluir"
-                aria-label={`Excluir ${b.title}`}
-              />
-            </motion.div>
-          ))}
-        </motion.div>
-      )}
+                type="submit"
+                variant="primary"
+                icon={<Plus size={16} />}
+                loading={saving}
+                loadingLabel="A guardar…"
+              >
+                Guardar bloco
+              </Button>
+            </div>
+          </form>
+        }
+      />
     </PageTransition>
   )
 }

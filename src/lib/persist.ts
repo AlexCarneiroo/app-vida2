@@ -1,8 +1,10 @@
 import {
   migrateFinancasDoc,
   migrateHabitosDoc,
+  migrateJogosDoc,
   migrateNutricaoDoc,
   migrateRotinaDoc,
+  migrateSaudeDoc,
   migrateTreinoDoc,
 } from './migrate'
 import {
@@ -13,8 +15,10 @@ import {
 } from './dataVersion'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
+import type { JogosState } from '../types/jogos'
 import type { NutricaoState } from '../types/nutricao'
 import type { RotinaState } from '../types/rotina'
+import type { SaudeState } from '../types/saude'
 import type { TreinoState } from '../types/treino'
 
 const BACKUP_PREFIX = 'vida.backup.'
@@ -78,6 +82,14 @@ export function loadRotinaPersisted(key: string, fallback: RotinaState) {
 
 export function loadNutricaoPersisted(key: string, fallback: NutricaoState) {
   return loadWithMigrate(key, fallback, migrateNutricaoDoc)
+}
+
+export function loadSaudePersisted(key: string, fallback: SaudeState) {
+  return loadWithMigrate(key, fallback, migrateSaudeDoc)
+}
+
+export function loadJogosPersisted(key: string, fallback: JogosState) {
+  return loadWithMigrate(key, fallback, migrateJogosDoc)
 }
 
 export function savePersisted<T>(key: string, doc: PersistedDoc<T>) {

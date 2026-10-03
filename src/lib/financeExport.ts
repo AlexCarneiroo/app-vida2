@@ -1,7 +1,6 @@
-import { jsPDF } from 'jspdf'
 import { CATEGORY_LABELS } from '../data/financasDefaults'
 import type { MonthStats, Transaction } from '../types/financas'
-import { formatMonthLabel } from './bankImport'
+import { formatMonthLabel } from './date'
 
 function money(n: number) {
   return n.toLocaleString('pt-BR', {
@@ -10,11 +9,12 @@ function money(n: number) {
   })
 }
 
-export function exportMonthPdf(input: {
+export async function exportMonthPdf(input: {
   monthKey: string
   transactions: Transaction[]
   stats: MonthStats
 }) {
+  const { jsPDF } = await import('jspdf')
   const { monthKey, transactions, stats } = input
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const pageW = doc.internal.pageSize.getWidth()

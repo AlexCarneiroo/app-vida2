@@ -7,12 +7,13 @@ import type { ActiveWorkout } from '../../types/treino'
 
 type HistoryListProps = {
   history: ActiveWorkout[]
+  /** Se omitido, mostra todos. */
   limit?: number
 }
 
-export function HistoryList({ history, limit = 8 }: HistoryListProps) {
+export function HistoryList({ history, limit }: HistoryListProps) {
   const [openId, setOpenId] = useState<string | null>(null)
-  const items = history.slice(0, limit)
+  const items = limit != null ? history.slice(0, limit) : history
 
   if (items.length === 0) return null
 

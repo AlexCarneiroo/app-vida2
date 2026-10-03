@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
+  Activity,
   ArrowUpRight,
   Check,
   Dumbbell,
+  Gamepad2,
   PiggyBank,
   Play,
   Repeat,
@@ -23,14 +25,21 @@ import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
 import { useNutricao } from '../hooks/useNutricao'
 import { useRotina } from '../hooks/useRotina'
+import { useJogos } from '../hooks/useJogos'
+import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
 import { coachLine, useMotivation } from '../hooks/useMotivation'
+import {
+  buildInstructorHomeNote,
+  InstructorHomeNote,
+} from '../components/treino/InstructorHomeNote'
 import {
   financasDayLog,
   mergeDayLogs,
   treinoDayLog,
 } from '../lib/activityHeatmap'
-import { formatBRL } from '../lib/date'
+import { daysUntilBill } from '../lib/billStatus'
+import { dateKey, formatBRL, weekDates } from '../lib/date'
 
 /** Bom dia 5–11 · Boa tarde 12–17 · Boa noite 18–4 */
 function greetingForHour(hour: number) {
@@ -46,7 +55,9 @@ export function HomePage() {
     isTodayDone,
     state,
     stats,
+    plan,
   } = useTreino()
+  const instructorMode = state.settings.instructorMode
   const {
     dueToday,
     doneCount,
@@ -63,9 +74,26 @@ export function HomePage() {
     toggleBlock,
     dayLog: rotinaLog,
   } = useRotina()
-  const { stats: financeStats, monthTransactions, state: financeState, monthLabel } =
-    useFinancas()
+  const {
+    stats: financeStats,
+    monthTransactions,
+    state: financeState,
+    monthLabel,
+    billsOverdue,
+    billsDueSoonAlert,
+  } = useFinancas()
   const { todayMacros, todayEntries, state: nutriState } = useNutricao()
+  const {
+    score: saudeScore,
+    signals: saudeSignals,
+    weeklyInsights,
+    dueExams,
+    sleepDebt,
+    poorSleepForTraining,
+    state: saudeState,
+    today: saudeToday,
+  } = useSaude()
+  const { playsToday: jogosPlaysToday, streak: jogosStreak } = useJogos()
   const nutriLog = nutriState.dayLog ?? {}
   const goals = financeState.goals
 
@@ -248,6 +276,34 @@ export function HomePage() {
         iconBg: 'rgba(242, 166, 90, 0.16)',
         iconFg: 'var(--nutricao)',
       },
+      {
+        to: '/saude',
+        title: 'Saúde',
+        desc: saudeSignals.waterOk
+          ? `Vitalidade ${saudeScore} · água ok`
+          : `Vitalidade ${saudeScore} · hidratação`,
+        meta: `${saudeScore}`,
+        progress: saudeScore,
+        icon: Activity,
+        bar: 'var(--saude)',
+        iconBg: 'color-mix(in srgb, var(--saude) 16%, transparent)',
+        iconFg: 'var(--saude)',
+      },
+      {
+        to: '/jogos',
+        title: 'Jogos',
+        desc:
+          jogosPlaysToday > 0
+            ? `${jogosPlaysToday} sessão${jogosPlaysToday === 1 ? '' : 'ões'} hoje · sequência ${jogosStreak}d`
+            : 'Treino mental — memória, fala e foco',
+        meta: jogosPlaysToday > 0 ? `${jogosPlaysToday}` : '—',
+        progress:
+          jogosPlaysToday > 0 ? Math.min(100, jogosPlaysToday * 34) : 0,
+        icon: Gamepad2,
+        bar: 'var(--jogos)',
+        iconBg: 'color-mix(in srgb, var(--jogos) 16%, transparent)',
+        iconFg: 'var(--jogos)',
+      },
     ],
     [
       treinoDesc,
@@ -263,6 +319,10 @@ export function HomePage() {
       rotinaDone,
       todayMacros,
       nutriGoal,
+      saudeScore,
+      saudeSignals.waterOk,
+      jogosPlaysToday,
+      jogosStreak,
     ],
   )
 
@@ -275,6 +335,113 @@ export function HomePage() {
     habitPending: dueToday.some((h) => !h.doneToday && !h.skippedToday),
     workoutPending: Boolean(todayTemplate && !isTodayDone && !state.active),
   })
+
+  const missedWorkouts = useMemo(() => {
+    const days = weekDates(now)
+    const weekKeys = new Set(days.map((d) => dateKey(d)))
+    const doneIds = new Set<string>()
+    for (const [key, templateId] of Object.entries(state.weekDone)) {
+      if (weekKeys.has(key) && templateId) doneIds.add(templateId)
+    }
+    for (const session of state.history) {
+      if (
+        session.templateId &&
+        session.completedAt &&
+        weekKeys.has(session.dateKey)
+      ) {
+        doneIds.add(session.templateId)
+      }
+    }
+    const todayDow = now.getDay()
+    return plan
+      .filter((t) => t.dayOfWeek < todayDow && !doneIds.has(t.id))
+      .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
+  }, [plan, state.weekDone, state.history, now])
+
+  const instructorNote = useMemo(() => {
+    if (!instructorMode) return null
+    return buildInstructorHomeNote({
+      dateKey: dateKey(now),
+      firstName,
+      todayTemplate,
+      todayDone: isTodayDone,
+      missed: missedWorkouts,
+      activeName: state.active?.name ?? null,
+    })
+  }, [
+    instructorMode,
+    now,
+    firstName,
+    todayTemplate,
+    isTodayDone,
+    missedWorkouts,
+    state.active?.name,
+  ])
+
+  const saudeNote = useMemo(() => {
+    const warn = weeklyInsights.find((i) => i.tone === 'warn')
+    if (warn) return warn.body
+    if (dueExams.length > 0) {
+      return dueExams.length === 1
+        ? `Exame a refazer: ${dueExams[0].name}.`
+        : `${dueExams.length} exames próximos do prazo.`
+    }
+    if (sleepDebt >= 4) {
+      return `Débito de sono ~${sleepDebt}h esta semana.`
+    }
+    if (poorSleepForTraining) {
+      return 'Sono curto ontem — treino leve se precisares.'
+    }
+    const pendingMeds = saudeState.medications.filter(
+      (m) => m.enabled && m.lastTakenDateKey !== saudeToday,
+    )
+    if (pendingMeds.length > 0) {
+      return pendingMeds.length === 1
+        ? `Medicação pendente: ${pendingMeds[0].name}.`
+        : `${pendingMeds.length} medicações pendentes hoje.`
+    }
+    return null
+  }, [
+    weeklyInsights,
+    dueExams,
+    sleepDebt,
+    poorSleepForTraining,
+    saudeState.medications,
+    saudeToday,
+  ])
+
+  const billsNote = useMemo(() => {
+    if (billsOverdue.length > 0) {
+      const names = billsOverdue
+        .slice(0, 3)
+        .map((b) => b.name)
+        .join(', ')
+      const more =
+        billsOverdue.length > 3 ? ` +${billsOverdue.length - 3}` : ''
+      const count =
+        billsOverdue.length === 1
+          ? '1 conta atrasada'
+          : `${billsOverdue.length} contas atrasadas`
+      return `${count}: ${names}${more}.`
+    }
+    if (billsDueSoonAlert.length === 0) return null
+    const now = new Date()
+    const today = billsDueSoonAlert.filter((b) => daysUntilBill(b, now) === 0)
+    const tomorrow = billsDueSoonAlert.filter(
+      (b) => daysUntilBill(b, now) === 1,
+    )
+    if (today.length > 0) {
+      return today.length === 1
+        ? `Hoje vence ${today[0].name}.`
+        : `Hoje vencem ${today.map((b) => b.name).join(', ')}.`
+    }
+    if (tomorrow.length > 0) {
+      return tomorrow.length === 1
+        ? `Amanhã vence ${tomorrow[0].name}.`
+        : `Amanhã vencem ${tomorrow.map((b) => b.name).join(', ')}.`
+    }
+    return null
+  }, [billsOverdue, billsDueSoonAlert])
 
   const primaryTreinoLabel = state.active
     ? 'Continuar treino'
@@ -360,11 +527,47 @@ export function HomePage() {
           </span>
         )}
         <p className="home-hero__line">{heroLine}</p>
-        {quote && (
+        {instructorNote ? (
+          <InstructorHomeNote data={instructorNote} />
+        ) : quote ? (
           <blockquote className="home-hero__quote">
             <p>“{quote.text}”</p>
             <cite>{quote.author}</cite>
           </blockquote>
+        ) : null}
+        {instructorNote && quote && (
+          <blockquote className="home-hero__quote home-hero__quote--soft">
+            <p>“{quote.text}”</p>
+            <cite>{quote.author}</cite>
+          </blockquote>
+        )}
+        {billsNote && (
+          <aside
+            className="home-hero__quote home-bills-note"
+            aria-label="Contas atrasadas"
+          >
+            <p>{billsNote}</p>
+            <cite>
+              <span>Finanças</span>
+              <Link to="/financas" className="home-bills-note__cta">
+                Ver contas
+              </Link>
+            </cite>
+          </aside>
+        )}
+        {saudeNote && (
+          <aside
+            className="home-hero__quote home-saude-note"
+            aria-label="Alerta de saúde"
+          >
+            <p>{saudeNote}</p>
+            <cite>
+              <span>Saúde</span>
+              <Link to="/saude" className="home-saude-note__cta">
+                Ver saúde
+              </Link>
+            </cite>
+          </aside>
         )}
 
         {dayTotal === 0 ? (
@@ -416,6 +619,26 @@ export function HomePage() {
               <span>
                 <strong>Nutrição</strong>
                 <em>Registar o prato</em>
+              </span>
+              <ArrowUpRight size={16} />
+            </Link>
+            <Link to="/saude" className="home-start">
+              <span className="home-start__icon" style={{ color: 'var(--saude)' }}>
+                <Activity size={18} />
+              </span>
+              <span>
+                <strong>Saúde</strong>
+                <em>Vitalidade e exames</em>
+              </span>
+              <ArrowUpRight size={16} />
+            </Link>
+            <Link to="/jogos" className="home-start">
+              <span className="home-start__icon" style={{ color: 'var(--jogos)' }}>
+                <Gamepad2 size={18} />
+              </span>
+              <span>
+                <strong>Jogos</strong>
+                <em>Treino mental</em>
               </span>
               <ArrowUpRight size={16} />
             </Link>

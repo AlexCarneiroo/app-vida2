@@ -41,7 +41,8 @@ export function WorkoutSummaryCard({
       <div className="workout-summary__grid">
         <div>
           <span>Duração</span>
-          <strong>{summary.durationMin} min</strong>
+          <strong>{summary.durationLabel}</strong>
+          <em className="workout-summary__range">{summary.timeRange}</em>
         </div>
         <div>
           <span>Volume</span>

@@ -870,11 +870,4 @@ export function monthOptions(around = new Date(), count = 18): string[] {
   return out
 }
 
-export function formatMonthLabel(monthKey: string) {
-  const [y, m] = monthKey.split('-').map(Number)
-  const label = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  })
-  return label.charAt(0).toUpperCase() + label.slice(1)
-}
+export { formatMonthLabel } from './date'

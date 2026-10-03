@@ -1,6 +1,6 @@
 import type { MuscleGroup, TemplateExercise, WorkoutTemplate } from '../types/treino'
 import { defaultExerciseName, exercisesForMuscle } from './exerciseLibrary'
-import { DAY_NAMES } from './treinoDefaults'
+import { DAY_NAMES } from './dayLabels'
 
 export const WORKOUT_STARTERS = [
   { id: 'custom', label: 'O meu treino', hint: 'Começa do zero' },

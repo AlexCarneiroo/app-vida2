@@ -17,9 +17,11 @@ import {
 import { dateKey, uid as makeId } from '../lib/date'
 import { loadTreinoPersisted, touchPersisted } from '../lib/persist'
 import {
+  applyEffortToSetTargets,
   buildWorkoutSummary,
   findLastExercise,
   getLoadSuggestion,
+  lastSessionMaxWeight,
   normalizeExerciseName,
   workoutSetsDone,
   workoutVolume,
@@ -35,6 +37,8 @@ import type {
   TemplateExercise,
   TreinoSettings,
   TreinoState,
+  EffortLevel,
+  InstructorAdjust,
   WorkoutSummary,
   WorkoutTemplate,
 } from '../types/treino'
@@ -44,6 +48,8 @@ const STORAGE_KEY = 'vida.treino.v1'
 const defaultSettings: TreinoSettings = {
   restSeconds: 90,
   restTimerEnabled: true,
+  instructorMode: true,
+  instructorQuickMode: false,
 }
 
 
@@ -99,6 +105,24 @@ function templateToExercises(
   })
 }
 
+function setsFromActive(ex: Exercise): { reps: number; weight: number }[] {
+  const done = ex.sets.filter((s) => s.done)
+  const source = done.length > 0 ? done : ex.sets
+  return source.map((s) => ({ reps: s.reps, weight: s.weight }))
+}
+
+function defaultActiveSets(muscle: MuscleGroup): WorkoutSetDraft[] {
+  if (muscle === 'cardio') return [{ reps: 30, weight: 0 }]
+  return [
+    { reps: 10, weight: 20 },
+    { reps: 10, weight: 20 },
+    { reps: 10, weight: 20 },
+  ]
+}
+
+type WorkoutSetDraft = { reps: number; weight: number }
+
+/** Atualiza só cargas/reps dos exercícios que já existiam no plano. */
 function syncPlanFromWorkout(
   plan: WorkoutTemplate[],
   workout: ActiveWorkout,
@@ -129,6 +153,26 @@ function syncPlanFromWorkout(
 
         return { ...te, sets: nextSets }
       }),
+    }
+  })
+}
+
+/** Substitui a lista de exercícios do dia pelo que foi feito na sessão. */
+function syncPlanStructureFromWorkout(
+  plan: WorkoutTemplate[],
+  workout: ActiveWorkout,
+): WorkoutTemplate[] {
+  return plan.map((template) => {
+    if (template.id !== workout.templateId) return template
+    return {
+      ...template,
+      exercises: workout.exercises.map((ex) => ({
+        id: ex.sourceId,
+        name: ex.name,
+        muscle: ex.muscle,
+        notes: ex.notes,
+        sets: setsFromActive(ex),
+      })),
     }
   })
 }
@@ -410,6 +454,102 @@ export function useTreino() {
     })
   }, [])
 
+  const addActiveExercise = useCallback(
+    (input: { name: string; muscle: MuscleGroup; notes?: string }): string | null => {
+      const name = input.name.trim()
+      if (!name) return null
+      const sourceId = makeId('ex')
+      const runtimeId = makeId(sourceId)
+      setState((prev) => {
+        if (!prev.active) return prev
+        const next: Exercise = {
+          id: runtimeId,
+          sourceId,
+          name,
+          muscle: input.muscle,
+          notes: input.notes,
+          sets: defaultActiveSets(input.muscle).map((s) => ({
+            id: makeId('set'),
+            reps: s.reps,
+            weight: s.weight,
+            done: false,
+          })),
+        }
+        return {
+          ...prev,
+          active: {
+            ...prev.active,
+            structureDirty: true,
+            exercises: [...prev.active.exercises, next],
+          },
+        }
+      })
+      return runtimeId
+    },
+    [],
+  )
+
+  const replaceActiveExercise = useCallback(
+    (
+      exerciseId: string,
+      input: { name: string; muscle: MuscleGroup; notes?: string },
+    ) => {
+      const name = input.name.trim()
+      if (!name) return
+      setState((prev) => {
+        if (!prev.active) return prev
+        return {
+          ...prev,
+          active: {
+            ...prev.active,
+            structureDirty: true,
+            exercises: prev.active.exercises.map((ex) => {
+              if (ex.id !== exerciseId) return ex
+              const sameMuscle = ex.muscle === input.muscle
+              const baseSets = sameMuscle
+                ? ex.sets.map((s) => ({
+                    id: makeId('set'),
+                    reps: s.reps,
+                    weight: input.muscle === 'cardio' ? 0 : s.weight,
+                    done: false,
+                  }))
+                : defaultActiveSets(input.muscle).map((s) => ({
+                    id: makeId('set'),
+                    reps: s.reps,
+                    weight: s.weight,
+                    done: false,
+                  }))
+              return {
+                ...ex,
+                sourceId: makeId('ex'),
+                name,
+                muscle: input.muscle,
+                notes: input.notes,
+                sets: baseSets,
+              }
+            }),
+          },
+        }
+      })
+    },
+    [],
+  )
+
+  const removeActiveExercise = useCallback((exerciseId: string) => {
+    setState((prev) => {
+      if (!prev.active) return prev
+      if (prev.active.exercises.length <= 1) return prev
+      return {
+        ...prev,
+        active: {
+          ...prev.active,
+          structureDirty: true,
+          exercises: prev.active.exercises.filter((ex) => ex.id !== exerciseId),
+        },
+      }
+    })
+  }, [])
+
   const applyWeightBump = useCallback((exerciseId: string, delta = 2.5) => {
     setState((prev) => {
       if (!prev.active) return prev
@@ -468,27 +608,34 @@ export function useTreino() {
     [state.history],
   )
 
-  const completeWorkout = useCallback(() => {
-    setState((prev) => {
-      if (!prev.active) return prev
-      const finished: ActiveWorkout = {
-        ...prev.active,
-        completedAt: new Date().toISOString(),
-      }
-      const summary = buildWorkoutSummary(finished, prev.history)
-      queueMicrotask(() => setLastSummary(summary))
-      return {
-        ...prev,
-        active: null,
-        history: [finished, ...prev.history].slice(0, 80),
-        weekDone: {
-          ...prev.weekDone,
-          [finished.dateKey]: finished.templateId,
-        },
-        plan: syncPlanFromWorkout(prev.plan, finished),
-      }
-    })
-  }, [])
+  const completeWorkout = useCallback(
+    (options?: { syncStructure?: boolean }) => {
+      setState((prev) => {
+        if (!prev.active) return prev
+        const finished: ActiveWorkout = {
+          ...prev.active,
+          completedAt: new Date().toISOString(),
+        }
+        const summary = buildWorkoutSummary(finished, prev.history)
+        queueMicrotask(() => setLastSummary(summary))
+        const syncStructure = options?.syncStructure === true
+        return {
+          ...prev,
+          active: null,
+          history: [finished, ...prev.history].slice(0, 80),
+          weekDone: {
+            ...prev.weekDone,
+            [finished.dateKey]: finished.templateId,
+          },
+          plan: syncStructure
+            ? syncPlanStructureFromWorkout(prev.plan, finished)
+            : syncPlanFromWorkout(prev.plan, finished),
+          activePresetId: syncStructure ? null : prev.activePresetId,
+        }
+      })
+    },
+    [],
+  )
 
   const clearSummary = useCallback(() => setLastSummary(null), [])
 
@@ -505,6 +652,78 @@ export function useTreino() {
       settings: { ...prev.settings, restTimerEnabled },
     }))
   }, [])
+
+  const setInstructorMode = useCallback((instructorMode: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, instructorMode },
+    }))
+  }, [])
+
+  const setInstructorQuickMode = useCallback((instructorQuickMode: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, instructorQuickMode },
+    }))
+  }, [])
+
+  /** Após feedback do instrutor: ajusta séries ainda por fazer neste exercício. */
+  const applyInstructorEffort = useCallback(
+    (exerciseId: string, effort: EffortLevel): InstructorAdjust | null => {
+      let result: InstructorAdjust | null = null
+      setState((prev) => {
+        if (!prev.active) return prev
+        return {
+          ...prev,
+          active: {
+            ...prev.active,
+            exercises: prev.active.exercises.map((ex) => {
+              if (ex.id !== exerciseId || ex.muscle === 'cardio') return ex
+              const done = ex.sets.filter((s) => s.done)
+              const lastDone = done[done.length - 1]
+              const pending = ex.sets.find((s) => !s.done)
+              const baseWeight =
+                lastDone?.weight ?? pending?.weight ?? 0
+              const baseReps =
+                pending?.reps ?? lastDone?.reps ?? 8
+              const adjusted = applyEffortToSetTargets(
+                baseWeight,
+                baseReps,
+                effort,
+                lastDone?.reps,
+              )
+              const lastWeight = lastSessionMaxWeight(
+                prev.history,
+                ex.sourceId,
+                ex.name,
+                prev.active?.startedAt,
+              )
+              result = {
+                weight: adjusted.weight,
+                reps: adjusted.reps,
+                repsChanged: adjusted.repsChanged,
+                lastWeight,
+              }
+              return {
+                ...ex,
+                sets: ex.sets.map((s) =>
+                  s.done
+                    ? s
+                    : {
+                        ...s,
+                        weight: adjusted.weight,
+                        reps: adjusted.reps,
+                      },
+                ),
+              }
+            }),
+          },
+        }
+      })
+      return result
+    },
+    [],
+  )
 
   const updateTemplate = useCallback(
     (
@@ -869,12 +1088,18 @@ export function useTreino() {
     updateSet,
     addActiveSet,
     removeActiveSet,
+    addActiveExercise,
+    replaceActiveExercise,
+    removeActiveExercise,
     applyWeightBump,
     applySuggestedWeight,
     suggestionFor,
     completeWorkout,
     setRestSeconds,
     setRestTimerEnabled,
+    setInstructorMode,
+    setInstructorQuickMode,
+    applyInstructorEffort,
     updateTemplate,
     addTemplate,
     startBlankCustomPlan,

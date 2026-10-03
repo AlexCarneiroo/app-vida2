@@ -1,8 +1,10 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  Activity,
   BarChart3,
   Dumbbell,
+  Gamepad2,
   LayoutDashboard,
   PiggyBank,
   Plus,
@@ -23,6 +25,8 @@ const ICONS: Record<NavPageId, typeof LayoutDashboard> = {
   habitos: Sparkles,
   rotina: Repeat,
   nutricao: UtensilsCrossed,
+  saude: Activity,
+  jogos: Gamepad2,
   relatorio: BarChart3,
   config: Settings,
 }

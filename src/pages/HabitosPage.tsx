@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   Check,
   Flame,
@@ -21,12 +21,13 @@ import {
   PERSONAL_GOAL_UNITS,
   suggestCategory,
 } from '../data/habitosDefaults'
-import { DAY_LABELS } from '../data/treinoDefaults'
+import { DAY_LABELS } from '../data/dayLabels'
 import {
   PageTransition,
   staggerContainer,
   staggerItem,
 } from '../components/ui/PageTransition'
+import { PageHeader } from '../components/ui/PageShell'
 import { Button } from '../components/ui/Button'
 import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { useConfirm, useToast } from '../components/ui/Feedback'
@@ -45,6 +46,17 @@ import type {
 const CATEGORIES = Object.keys(HABIT_CATEGORY_LABELS) as HabitCategory[]
 const FREQUENCIES = Object.keys(HABIT_FREQUENCY_LABELS) as HabitFrequency[]
 const CUSTOM_DAYS = [1, 2, 3, 4, 5, 6, 0] // seg → dom
+
+type HabitosView = 'home' | 'habit' | 'goal'
+
+const emptyGoalForm = () => ({
+  name: '',
+  detail: '',
+  category: 'saude' as HabitCategory,
+  target: '60',
+  unit: 'L',
+  defaultBoost: '2',
+})
 
 const emptyForm = (): HabitInput & {
   preferredTime: string
@@ -123,18 +135,13 @@ export function HabitosPage() {
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [removingGoalId, setRemovingGoalId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [showForm, setShowForm] = useState(false)
-  const [showGoalForm, setShowGoalForm] = useState(false)
+  const [view, setView] = useState<HabitosView>('home')
   const [form, setForm] = useState(emptyForm)
   const [categoryLocked, setCategoryLocked] = useState(false)
-  const [goalForm, setGoalForm] = useState({
-    name: '',
-    detail: '',
-    category: 'saude' as HabitCategory,
-    target: '60',
-    unit: 'L',
-    defaultBoost: '2',
-  })
+  const [goalForm, setGoalForm] = useState(emptyGoalForm)
+  const showHome = view === 'home'
+  const showHabitPanel = view === 'habit'
+  const showGoalPanel = view === 'goal'
 
   const freezesLeft = useMemo(() => {
     if (habits.length === 0) return HABIT_FREEZES_PER_WEEK
@@ -142,10 +149,16 @@ export function HabitosPage() {
   }, [habits])
 
   useEffect(() => {
-    if (!showForm || !form.name.trim() || categoryLocked || editingId) return
+    if (!showHabitPanel || !form.name.trim() || categoryLocked || editingId) return
     const suggested = suggestCategory(form.name)
     setForm((f) => (f.category === suggested ? f : { ...f, category: suggested }))
-  }, [form.name, showForm, categoryLocked, editingId])
+  }, [form.name, showHabitPanel, categoryLocked, editingId])
+
+  useEffect(() => {
+    if (view !== 'home') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [view])
 
   useEffect(() => {
     const dueReminders = dueToday.filter(
@@ -174,21 +187,32 @@ export function HabitosPage() {
   }
 
   function closeForm() {
-    setShowForm(false)
+    setView('home')
     setEditingId(null)
     setForm(emptyForm())
     setCategoryLocked(false)
   }
 
+  function closeGoalForm() {
+    setView('home')
+    setGoalForm(emptyGoalForm())
+  }
+
+  function closePanel() {
+    if (view === 'habit') closeForm()
+    else if (view === 'goal') closeGoalForm()
+  }
+
   function openCreate() {
-    if (showForm && !editingId) {
-      closeForm()
-      return
-    }
     setEditingId(null)
     setForm(emptyForm())
     setCategoryLocked(false)
-    setShowForm(true)
+    setView('habit')
+  }
+
+  function openGoalCreate() {
+    setGoalForm(emptyGoalForm())
+    setView('goal')
   }
 
   function openEdit(h: Habit) {
@@ -210,8 +234,7 @@ export function HabitosPage() {
       linkedGoalId: h.linkedGoalId,
       goalBoostAmount: h.goalBoostAmount || 0,
     })
-    setShowForm(true)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    setView('habit')
   }
 
   function applyIdea(idea: (typeof HABIT_QUICK_IDEAS)[number]) {
@@ -226,7 +249,7 @@ export function HabitosPage() {
       goalTarget: idea.goalTarget,
       preferredTime: idea.goalKind === 'count' ? '' : '07:30',
     })
-    setShowForm(true)
+    setView('habit')
   }
 
   function handleSubmit(e: FormEvent) {
@@ -374,15 +397,8 @@ export function HabitosPage() {
         unit: goalForm.unit,
         defaultBoost: Number(String(goalForm.defaultBoost).replace(',', '.')) || 1,
       })
-      setGoalForm({
-        name: '',
-        detail: '',
-        category: 'saude',
-        target: '60',
-        unit: 'L',
-        defaultBoost: '2',
-      })
-      setShowGoalForm(false)
+      setGoalForm(emptyGoalForm())
+      setView('home')
       toast('Meta pessoal criada', 'ok')
     })
   }
@@ -396,8 +412,25 @@ export function HabitosPage() {
       unit: idea.unit,
       defaultBoost: String(idea.defaultBoost),
     })
-    setShowGoalForm(true)
+    setView('goal')
   }
+
+  const panelMeta =
+    view === 'habit'
+      ? {
+          kicker: 'Consistência',
+          title: editingId ? 'Editar hábito' : 'Novo hábito',
+          sub: editingId
+            ? 'A sequência e o histórico mantêm-se.'
+            : 'Preenche o essencial. A categoria sugere-se pelo nome.',
+        }
+      : view === 'goal'
+        ? {
+            kicker: 'Consistência',
+            title: 'Nova meta',
+            sub: 'Metas como “beber 2 L” acumulam progresso com o hábito ligado.',
+          }
+        : null
 
   const restingToday = habits.filter(
     (h) => !dueToday.some((d) => d.id === h.id),
@@ -405,675 +438,762 @@ export function HabitosPage() {
 
   return (
     <PageTransition>
-      <header className="page-header">
-        <div>
-          <p className="page-kicker">Consistência</p>
-          <h1 className="page-title">Hábitos</h1>
-          <p className="page-sub">
-            Metas pessoais (água, leitura…), hábitos do dia e, nos dias difíceis,
-            proteção de sequência.
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          icon={<Plus size={16} />}
-          onClick={openCreate}
-          disabled={saving}
-        >
-          {showForm && !editingId ? 'Fechar' : 'Novo'}
-        </Button>
-      </header>
-
-      <div className="surface module-stat">
-        <span className="module-stat__icon" style={{ color: 'var(--habitos)' }}>
-          <Sparkles size={18} />
-        </span>
-        <div>
-          <strong>
-            {doneCount}/{total} hoje
-          </strong>
-          <span>
-            {total === 0
-              ? 'Adiciona o primeiro hábito'
-              : coveredCount === total
-                ? doneCount === total
-                  ? 'Dia completo'
-                  : `${doneCount} feitos · ${coveredCount - doneCount} protegidos`
-                : `${freezesLeft} proteção${freezesLeft === 1 ? '' : 'ões'} esta semana`}
-          </span>
-        </div>
-      </div>
-
-      <ActivityHeatmap log={dayLog} range="month" title="Hábitos no mês" />
-
-      <div className="section-label">
-        <h2>Hoje</h2>
-        <span>
-          {doneCount}/{total}
-        </span>
-      </div>
-
-      {dueToday.length === 0 ? (
-        <div className="surface finance-empty">
-          <Sparkles size={24} />
-          <p>
-            {allTotal === 0
-              ? 'Ainda sem hábitos. Cria o primeiro ou usa uma ideia rápida.'
-              : 'Nada agendado para hoje — desfruta do descanso.'}
-          </p>
-        </div>
-      ) : (
-        <motion.div
-          className="surface habit-list"
-          variants={staggerContainer}
-          initial="hidden"
-          animate="show"
-        >
-          {dueToday.map((h) => (
-            <HabitRow
-              key={h.id}
-              habit={h}
-              linkedGoalName={
-                h.linkedPersonalGoalId
-                  ? personalGoalNameById.get(h.linkedPersonalGoalId)
-                  : null
-              }
-              financeGoalName={
-                h.linkedGoalId ? financeGoalNameById.get(h.linkedGoalId) : null
-              }
-              removing={removingId === h.id}
-              onToggle={() => completeHabitAction(h)}
-              onBump={(delta) => {
-                const wasDone = h.doneToday
-                bumpHabitProgress(h.id, delta)
-                if (
-                  !wasDone &&
-                  delta > 0 &&
-                  h.progressToday + delta >= h.goalTarget
-                ) {
-                  boostLinkedGoal(h)
-                }
-              }}
-              onSkip={() => handleSkip(h)}
-              onEdit={() => openEdit(h)}
-              onRemove={() => handleRemove(h.id, h.name)}
-            />
-          ))}
-        </motion.div>
-      )}
-
-      <div className="section-label">
-        <h2>Metas pessoais</h2>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => setShowGoalForm((v) => !v)}
-        >
-          <Plus size={14} />
-          {showGoalForm ? 'Fechar' : 'Nova meta'}
-        </button>
-      </div>
-
-      <div className="habit-ideas" aria-label="Ideias de metas">
-        {PERSONAL_GOAL_IDEAS.map((idea) => (
-          <button
-            key={idea.name}
-            type="button"
-            className="habit-idea"
-            onClick={() => applyGoalIdea(idea)}
-          >
-            {idea.name}
-          </button>
-        ))}
-      </div>
-
-      {showGoalForm && (
-        <form className="surface habit-form" onSubmit={handleAddPersonalGoal}>
-          <p className="habit-form__lead">
-            Metas como “beber 2 L de água” acumulam progresso quando conclus
-            o hábito ligado.
-          </p>
-          <label className="plan-field">
-            <span>Nome da meta</span>
-            <input
-              type="text"
-              value={goalForm.name}
-              onChange={(e) =>
-                setGoalForm((f) => ({ ...f, name: e.target.value }))
-              }
-              placeholder="Ex.: Beber 2 L de água"
-              required
-              disabled={savingGoal}
-            />
-          </label>
-          <label className="plan-field">
-            <span>Nota (opcional)</span>
-            <input
-              type="text"
-              value={goalForm.detail}
-              onChange={(e) =>
-                setGoalForm((f) => ({ ...f, detail: e.target.value }))
-              }
-              placeholder="Porquê importa"
-              disabled={savingGoal}
-            />
-          </label>
-          <div className="habit-form__row">
-            <label className="plan-field">
-              <span>Alvo total</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={goalForm.target}
-                onChange={(e) =>
-                  setGoalForm((f) => ({ ...f, target: e.target.value }))
-                }
-                required
-                disabled={savingGoal}
-              />
-            </label>
-            <label className="plan-field">
-              <span>Unidade</span>
-              <select
-                value={goalForm.unit}
-                onChange={(e) =>
-                  setGoalForm((f) => ({ ...f, unit: e.target.value }))
-                }
-                disabled={savingGoal}
-              >
-                {PERSONAL_GOAL_UNITS.map((u) => (
-                  <option key={u} value={u}>
-                    {u}
-                  </option>
-                ))}
-                {!PERSONAL_GOAL_UNITS.includes(
-                  goalForm.unit as (typeof PERSONAL_GOAL_UNITS)[number],
-                ) && (
-                  <option value={goalForm.unit}>{goalForm.unit}</option>
-                )}
-              </select>
-            </label>
-            <label className="plan-field">
-              <span>Por cada dia feito</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={goalForm.defaultBoost}
-                onChange={(e) =>
-                  setGoalForm((f) => ({ ...f, defaultBoost: e.target.value }))
-                }
-                placeholder="Ex.: 2"
-                disabled={savingGoal}
-              />
-            </label>
-          </div>
-          <div className="habit-chips">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className={`habit-chip${goalForm.category === c ? ' is-active' : ''}`}
-                onClick={() => setGoalForm((f) => ({ ...f, category: c }))}
-              >
-                {HABIT_CATEGORY_LABELS[c]}
-              </button>
-            ))}
-          </div>
+      <PageHeader
+        kicker={panelMeta ? panelMeta.kicker : 'Consistência'}
+        title={panelMeta ? panelMeta.title : 'Hábitos'}
+        sub={
+          panelMeta?.sub ??
+          (showHome
+            ? 'Metas pessoais (água, leitura…), hábitos do dia e, nos dias difíceis, proteção de sequência.'
+            : undefined)
+        }
+        onBack={!showHome ? closePanel : undefined}
+        action={
           <Button
-            type="submit"
             variant="primary"
-            icon={<Target size={16} />}
-            loading={savingGoal}
-            loadingLabel="A guardar…"
+            icon={<Plus size={16} />}
+            onClick={openCreate}
+            disabled={saving}
           >
-            Guardar meta
+            Novo
           </Button>
-        </form>
-      )}
+        }
+      />
 
-      {personalGoals.length > 0 && (
-        <div className="personal-goals">
-          {personalGoals.map((goal) => {
-            const { pct, label } = formatGoalProgress(goal)
-            const linked = habits.filter(
-              (h) => h.linkedPersonalGoalId === goal.id,
-            )
-            return (
-              <article key={goal.id} className="surface personal-goal">
-                <div className="personal-goal__head">
-                  <span className="personal-goal__icon" aria-hidden>
-                    <Target size={16} />
-                  </span>
-                  <div className="personal-goal__info">
-                    <strong>{goal.name}</strong>
-                    <span>
-                      {HABIT_CATEGORY_LABELS[goal.category]}
-                      {goal.detail ? ` · ${goal.detail}` : ''}
-                    </span>
-                    {linked.length > 0 && (
-                      <em>
-                        Hábito
-                        {linked.length > 1 ? 's' : ''}:{' '}
-                        {linked.map((h) => h.name).join(' · ')}
-                      </em>
-                    )}
-                  </div>
-                  <span className="personal-goal__pct">{pct}%</span>
-                  <Button
-                    variant="ghost"
-                    className="finance-row__del"
-                    icon={<Trash2 size={14} />}
-                    loading={removingGoalId === goal.id}
-                    onClick={() => handleRemoveGoal(goal)}
-                    aria-label={`Excluir ${goal.name}`}
-                  />
-                </div>
-                <div
-                  className="finance-meter"
-                  role="progressbar"
-                  aria-valuenow={pct}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
-                  <span style={{ width: `${pct}%` }} />
-                </div>
-                <div className="personal-goal__foot">
-                  <span>{label}</span>
-                  {goal.completedAt ? (
-                    <em className="is-done">Concluída</em>
-                  ) : (
-                    <em>
-                      +{goal.defaultBoost} {goal.unit}/conclusão
-                    </em>
-                  )}
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      )}
-
-      <div className="habit-ideas" aria-label="Ideias rápidas de hábitos">
-        {HABIT_QUICK_IDEAS.map((idea) => (
-          <button
-            key={idea.name}
-            type="button"
-            className="habit-idea"
-            onClick={() => applyIdea(idea)}
+      <AnimatePresence mode="wait">
+        {showHabitPanel ? (
+          <motion.div
+            key="habit-panel"
+            className="app-panel"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
           >
-            {idea.name}
-          </button>
-        ))}
-      </div>
+            {!editingId && (
+              <div className="habit-ideas" aria-label="Ideias de hábitos">
+                {HABIT_QUICK_IDEAS.map((idea) => (
+                  <button
+                    key={idea.name}
+                    type="button"
+                    className="habit-idea"
+                    onClick={() => applyIdea(idea)}
+                  >
+                    {idea.name}
+                  </button>
+                ))}
+              </div>
+            )}
 
-      {showForm && (
-        <form className="surface habit-form" onSubmit={handleSubmit}>
-          <p className="habit-form__lead">
-            {editingId
-              ? 'A editar hábito — a sequência e o histórico mantêm-se.'
-              : 'Preenche o essencial. A categoria sugere-se pelo nome; podes ajustar tudo.'}
-          </p>
+            <form className="surface habit-form" onSubmit={handleSubmit}>
+              <label className="plan-field">
+                <span>Nome do hábito</span>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => patchForm({ name: e.target.value })}
+                  placeholder="Ex.: Beber água"
+                  required
+                  disabled={saving}
+                  autoFocus
+                />
+              </label>
 
-          <label className="plan-field">
-            <span>Nome do hábito</span>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => patchForm({ name: e.target.value })}
-              placeholder="Ex.: Beber água"
-              required
-              disabled={saving}
-              autoFocus
-            />
-          </label>
+              <label className="plan-field">
+                <span>Nota (opcional)</span>
+                <input
+                  type="text"
+                  value={form.detail}
+                  onChange={(e) => patchForm({ detail: e.target.value })}
+                  placeholder="Porquê isto importa para ti"
+                  disabled={saving}
+                />
+              </label>
 
-          <label className="plan-field">
-            <span>Nota (opcional)</span>
-            <input
-              type="text"
-              value={form.detail}
-              onChange={(e) => patchForm({ detail: e.target.value })}
-              placeholder="Porquê isto importa para ti"
-              disabled={saving}
-            />
-          </label>
-
-          <fieldset className="habit-form__group">
-            <legend>Categoria</legend>
-            <p className="habit-form__hint">
-              Organiza a lista e ajuda a Home a fazer sentido.
-            </p>
-            <div className="habit-chips">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`habit-chip${form.category === c ? ' is-active' : ''}`}
-                  onClick={() => patchForm({ category: c })}
-                >
-                  {HABIT_CATEGORY_LABELS[c]}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="habit-form__group">
-            <legend>Frequência</legend>
-            <p className="habit-form__hint">
-              Só nos dias escolhidos é que a sequência pode subir ou cair.
-            </p>
-            <div className="habit-chips">
-              {FREQUENCIES.map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  className={`habit-chip${form.frequency === f ? ' is-active' : ''}`}
-                  onClick={() => patchForm({ frequency: f })}
-                >
-                  {HABIT_FREQUENCY_LABELS[f]}
-                </button>
-              ))}
-            </div>
-            {form.frequency === 'custom' && (
-              <div className="habit-chips habit-chips--days">
-                {CUSTOM_DAYS.map((d) => {
-                  const on = form.customDays?.includes(d)
-                  return (
+              <fieldset className="habit-form__group">
+                <legend>Categoria</legend>
+                <p className="habit-form__hint">
+                  Organiza a lista e ajuda a Home a fazer sentido.
+                </p>
+                <div className="habit-chips">
+                  {CATEGORIES.map((c) => (
                     <button
-                      key={d}
+                      key={c}
                       type="button"
-                      className={`habit-chip${on ? ' is-active' : ''}`}
-                      onClick={() => {
-                        const cur = form.customDays ?? []
+                      className={`habit-chip${form.category === c ? ' is-active' : ''}`}
+                      onClick={() => patchForm({ category: c })}
+                    >
+                      {HABIT_CATEGORY_LABELS[c]}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="habit-form__group">
+                <legend>Frequência</legend>
+                <p className="habit-form__hint">
+                  Só nos dias escolhidos é que a sequência pode subir ou cair.
+                </p>
+                <div className="habit-chips">
+                  {FREQUENCIES.map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className={`habit-chip${form.frequency === f ? ' is-active' : ''}`}
+                      onClick={() => patchForm({ frequency: f })}
+                    >
+                      {HABIT_FREQUENCY_LABELS[f]}
+                    </button>
+                  ))}
+                </div>
+                {form.frequency === 'custom' && (
+                  <div className="habit-chips habit-chips--days">
+                    {CUSTOM_DAYS.map((d) => {
+                      const on = form.customDays?.includes(d)
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          className={`habit-chip${on ? ' is-active' : ''}`}
+                          onClick={() => {
+                            const cur = form.customDays ?? []
+                            patchForm({
+                              customDays: on
+                                ? cur.filter((x) => x !== d)
+                                : [...cur, d],
+                            })
+                          }}
+                        >
+                          {DAY_LABELS[d]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </fieldset>
+
+              <fieldset className="habit-form__group">
+                <legend>Meta do dia</legend>
+                <p className="habit-form__hint">
+                  <strong>Feito</strong> = um toque. <strong>Contagem</strong> =
+                  progresso (ex.: 8 copos de água).
+                </p>
+                <div className="habit-chips">
+                  <button
+                    type="button"
+                    className={`habit-chip${form.goalKind === 'check' ? ' is-active' : ''}`}
+                    onClick={() =>
+                      patchForm({ goalKind: 'check', goalTarget: 1 })
+                    }
+                  >
+                    Feito / não feito
+                  </button>
+                  <button
+                    type="button"
+                    className={`habit-chip${form.goalKind === 'count' ? ' is-active' : ''}`}
+                    onClick={() =>
+                      patchForm({
+                        goalKind: 'count',
+                        goalTarget: Math.max(2, form.goalTarget || 8),
+                      })
+                    }
+                  >
+                    Contagem
+                  </button>
+                </div>
+                {form.goalKind === 'count' && (
+                  <label className="plan-field plan-field--short">
+                    <span>Quantas vezes por dia?</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={99}
+                      value={form.goalTarget}
+                      onChange={(e) =>
                         patchForm({
-                          customDays: on
-                            ? cur.filter((x) => x !== d)
-                            : [...cur, d],
+                          goalTarget: Math.max(2, Number(e.target.value) || 2),
+                        })
+                      }
+                    />
+                  </label>
+                )}
+              </fieldset>
+
+              <div className="habit-form__row">
+                <label className="plan-field">
+                  <span>Horário preferido</span>
+                  <input
+                    type="time"
+                    value={form.preferredTime}
+                    onChange={(e) =>
+                      patchForm({ preferredTime: e.target.value })
+                    }
+                    disabled={saving}
+                  />
+                </label>
+                <label className="plan-field">
+                  <span>Lembrete</span>
+                  <div className="habit-reminder">
+                    <button
+                      type="button"
+                      className={`config-switch${form.reminderEnabled ? ' is-on' : ''}`}
+                      role="switch"
+                      aria-checked={form.reminderEnabled}
+                      onClick={() =>
+                        patchForm({
+                          reminderEnabled: !form.reminderEnabled,
+                          reminderTime:
+                            form.reminderTime || form.preferredTime || '09:00',
+                        })
+                      }
+                    >
+                      <span className="config-switch__knob" />
+                    </button>
+                    <input
+                      type="time"
+                      value={form.reminderTime}
+                      disabled={!form.reminderEnabled || saving}
+                      onChange={(e) =>
+                        patchForm({ reminderTime: e.target.value })
+                      }
+                    />
+                  </div>
+                </label>
+              </div>
+
+              <fieldset className="habit-form__group">
+                <legend>Meta pessoal</legend>
+                <p className="habit-form__hint">
+                  Liga a uma meta como “beber 2 L”. Ao concluir o dia, o
+                  progresso sobe automaticamente.
+                </p>
+                <label className="plan-field">
+                  <span>Associar a</span>
+                  <select
+                    value={form.linkedPersonalGoalId || ''}
+                    onChange={(e) => {
+                      const id = e.target.value || null
+                      const g = personalGoals.find((x) => x.id === id)
+                      patchForm({
+                        linkedPersonalGoalId: id,
+                        personalBoost: id
+                          ? form.personalBoost || g?.defaultBoost || 0
+                          : 0,
+                      })
+                    }}
+                    disabled={saving}
+                  >
+                    <option value="">Nenhuma</option>
+                    {personalGoals.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} ({g.current}/{g.target} {g.unit})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {personalGoals.length === 0 && (
+                  <p className="habit-form__hint">
+                    Cria primeiro uma meta pessoal na lista principal.
+                  </p>
+                )}
+                {form.linkedPersonalGoalId && (
+                  <label className="plan-field">
+                    <span>
+                      Quanto somar por conclusão (0 = usa o padrão da meta)
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={
+                        form.personalBoost
+                          ? String(form.personalBoost).replace('.', ',')
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const n = Number(
+                          e.target.value
+                            .replace(',', '.')
+                            .replace(/[^\d.]/g, ''),
+                        )
+                        patchForm({
+                          personalBoost: Number.isFinite(n) ? n : 0,
                         })
                       }}
-                    >
-                      {DAY_LABELS[d]}
-                    </button>
+                      disabled={saving}
+                    />
+                  </label>
+                )}
+              </fieldset>
+
+              <fieldset className="habit-form__group">
+                <legend>Meta de poupança (Finanças)</legend>
+                <p className="habit-form__hint">
+                  Opcional — se quiseres ligar também a dinheiro.
+                </p>
+                <label className="plan-field">
+                  <span>Associar a</span>
+                  <select
+                    value={form.linkedGoalId || ''}
+                    onChange={(e) =>
+                      patchForm({
+                        linkedGoalId: e.target.value || null,
+                        goalBoostAmount: e.target.value
+                          ? form.goalBoostAmount
+                          : 0,
+                      })
+                    }
+                    disabled={saving}
+                  >
+                    <option value="">Nenhuma meta</option>
+                    {savingsGoals.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} ({formatBRL(g.saved)} / {formatBRL(g.target)})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {form.linkedGoalId && (
+                  <label className="plan-field">
+                    <span>Ao concluir, somar à meta (R$)</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Ex.: 5,00"
+                      value={
+                        form.goalBoostAmount
+                          ? String(form.goalBoostAmount).replace('.', ',')
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const typed = sanitizeMoneyTyping(e.target.value)
+                        const n = parseBRLInput(typed)
+                        patchForm({
+                          goalBoostAmount: n ?? 0,
+                        })
+                      }}
+                      disabled={saving}
+                    />
+                  </label>
+                )}
+              </fieldset>
+
+              <p className="habit-form__hint">
+                O lembrete aparece na app perto da hora (com a app aberta). A
+                sequência usa até {HABIT_FREEZES_PER_WEEK} proteções por semana
+                nos dias difíceis.
+              </p>
+
+              <div className="habit-form__actions">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={closeForm}
+                  disabled={saving}
+                >
+                  Cancelar
+                </button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  icon={editingId ? <Pencil size={16} /> : <Plus size={16} />}
+                  loading={saving}
+                  loadingLabel="A guardar…"
+                >
+                  {editingId ? 'Guardar alterações' : 'Guardar hábito'}
+                </Button>
+              </div>
+            </form>
+          </motion.div>
+        ) : showGoalPanel ? (
+          <motion.div
+            key="goal-panel"
+            className="app-panel"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="habit-ideas" aria-label="Ideias de metas">
+              {PERSONAL_GOAL_IDEAS.map((idea) => (
+                <button
+                  key={idea.name}
+                  type="button"
+                  className="habit-idea"
+                  onClick={() => applyGoalIdea(idea)}
+                >
+                  {idea.name}
+                </button>
+              ))}
+            </div>
+
+            <form
+              className="surface habit-form"
+              onSubmit={handleAddPersonalGoal}
+            >
+              <label className="plan-field">
+                <span>Nome da meta</span>
+                <input
+                  type="text"
+                  value={goalForm.name}
+                  onChange={(e) =>
+                    setGoalForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  placeholder="Ex.: Beber 2 L de água"
+                  required
+                  disabled={savingGoal}
+                  autoFocus
+                />
+              </label>
+              <label className="plan-field">
+                <span>Nota (opcional)</span>
+                <input
+                  type="text"
+                  value={goalForm.detail}
+                  onChange={(e) =>
+                    setGoalForm((f) => ({ ...f, detail: e.target.value }))
+                  }
+                  placeholder="Porquê importa"
+                  disabled={savingGoal}
+                />
+              </label>
+              <div className="habit-form__row">
+                <label className="plan-field">
+                  <span>Alvo total</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={goalForm.target}
+                    onChange={(e) =>
+                      setGoalForm((f) => ({ ...f, target: e.target.value }))
+                    }
+                    required
+                    disabled={savingGoal}
+                  />
+                </label>
+                <label className="plan-field">
+                  <span>Unidade</span>
+                  <select
+                    value={goalForm.unit}
+                    onChange={(e) =>
+                      setGoalForm((f) => ({ ...f, unit: e.target.value }))
+                    }
+                    disabled={savingGoal}
+                  >
+                    {PERSONAL_GOAL_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                    {!PERSONAL_GOAL_UNITS.includes(
+                      goalForm.unit as (typeof PERSONAL_GOAL_UNITS)[number],
+                    ) && (
+                      <option value={goalForm.unit}>{goalForm.unit}</option>
+                    )}
+                  </select>
+                </label>
+                <label className="plan-field">
+                  <span>Por cada dia feito</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={goalForm.defaultBoost}
+                    onChange={(e) =>
+                      setGoalForm((f) => ({
+                        ...f,
+                        defaultBoost: e.target.value,
+                      }))
+                    }
+                    placeholder="Ex.: 2"
+                    disabled={savingGoal}
+                  />
+                </label>
+              </div>
+              <div className="habit-chips">
+                {CATEGORIES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`habit-chip${goalForm.category === c ? ' is-active' : ''}`}
+                    onClick={() =>
+                      setGoalForm((f) => ({ ...f, category: c }))
+                    }
+                  >
+                    {HABIT_CATEGORY_LABELS[c]}
+                  </button>
+                ))}
+              </div>
+              <div className="habit-form__actions">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={closeGoalForm}
+                  disabled={savingGoal}
+                >
+                  Cancelar
+                </button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  icon={<Target size={16} />}
+                  loading={savingGoal}
+                  loadingLabel="A guardar…"
+                >
+                  Guardar meta
+                </Button>
+              </div>
+            </form>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="home"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="surface module-stat">
+              <span
+                className="module-stat__icon"
+                style={{ color: 'var(--habitos)' }}
+              >
+                <Sparkles size={18} />
+              </span>
+              <div>
+                <strong>
+                  {doneCount}/{total} hoje
+                </strong>
+                <span>
+                  {total === 0
+                    ? 'Adiciona o primeiro hábito'
+                    : coveredCount === total
+                      ? doneCount === total
+                        ? 'Dia completo'
+                        : `${doneCount} feitos · ${coveredCount - doneCount} protegidos`
+                      : `${freezesLeft} proteção${freezesLeft === 1 ? '' : 'ões'} esta semana`}
+                </span>
+              </div>
+            </div>
+
+            <ActivityHeatmap
+              log={dayLog}
+              range="month"
+              title="Hábitos no mês"
+            />
+
+            <div className="section-label">
+              <h2>Hoje</h2>
+              <span>
+                {doneCount}/{total}
+              </span>
+            </div>
+
+            {dueToday.length === 0 ? (
+              <div className="surface finance-empty">
+                <Sparkles size={24} />
+                <p>
+                  {allTotal === 0
+                    ? 'Ainda sem hábitos. Cria o primeiro ou usa uma ideia rápida.'
+                    : 'Nada agendado para hoje — desfruta do descanso.'}
+                </p>
+              </div>
+            ) : (
+              <motion.div
+                className="surface habit-list"
+                variants={staggerContainer}
+                initial="hidden"
+                animate="show"
+              >
+                {dueToday.map((h) => (
+                  <HabitRow
+                    key={h.id}
+                    habit={h}
+                    linkedGoalName={
+                      h.linkedPersonalGoalId
+                        ? personalGoalNameById.get(h.linkedPersonalGoalId)
+                        : null
+                    }
+                    financeGoalName={
+                      h.linkedGoalId
+                        ? financeGoalNameById.get(h.linkedGoalId)
+                        : null
+                    }
+                    removing={removingId === h.id}
+                    onToggle={() => completeHabitAction(h)}
+                    onBump={(delta) => {
+                      const wasDone = h.doneToday
+                      bumpHabitProgress(h.id, delta)
+                      if (
+                        !wasDone &&
+                        delta > 0 &&
+                        h.progressToday + delta >= h.goalTarget
+                      ) {
+                        boostLinkedGoal(h)
+                      }
+                    }}
+                    onSkip={() => handleSkip(h)}
+                    onEdit={() => openEdit(h)}
+                    onRemove={() => handleRemove(h.id, h.name)}
+                  />
+                ))}
+              </motion.div>
+            )}
+
+            <div className="section-label">
+              <h2>Metas pessoais</h2>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={openGoalCreate}
+              >
+                <Plus size={14} />
+                Nova meta
+              </button>
+            </div>
+
+            <div className="habit-ideas" aria-label="Ideias de metas">
+              {PERSONAL_GOAL_IDEAS.map((idea) => (
+                <button
+                  key={idea.name}
+                  type="button"
+                  className="habit-idea"
+                  onClick={() => applyGoalIdea(idea)}
+                >
+                  {idea.name}
+                </button>
+              ))}
+            </div>
+
+            {personalGoals.length > 0 && (
+              <div className="personal-goals">
+                {personalGoals.map((goal) => {
+                  const { pct, label } = formatGoalProgress(goal)
+                  const linked = habits.filter(
+                    (h) => h.linkedPersonalGoalId === goal.id,
+                  )
+                  return (
+                    <article key={goal.id} className="surface personal-goal">
+                      <div className="personal-goal__head">
+                        <span className="personal-goal__icon" aria-hidden>
+                          <Target size={16} />
+                        </span>
+                        <div className="personal-goal__info">
+                          <strong>{goal.name}</strong>
+                          <span>
+                            {HABIT_CATEGORY_LABELS[goal.category]}
+                            {goal.detail ? ` · ${goal.detail}` : ''}
+                          </span>
+                          {linked.length > 0 && (
+                            <em>
+                              Hábito
+                              {linked.length > 1 ? 's' : ''}:{' '}
+                              {linked.map((h) => h.name).join(' · ')}
+                            </em>
+                          )}
+                        </div>
+                        <span className="personal-goal__pct">{pct}%</span>
+                        <Button
+                          variant="ghost"
+                          className="finance-row__del"
+                          icon={<Trash2 size={14} />}
+                          loading={removingGoalId === goal.id}
+                          onClick={() => handleRemoveGoal(goal)}
+                          aria-label={`Excluir ${goal.name}`}
+                        />
+                      </div>
+                      <div
+                        className="finance-meter"
+                        role="progressbar"
+                        aria-valuenow={pct}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                      >
+                        <span style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="personal-goal__foot">
+                        <span>{label}</span>
+                        {goal.completedAt ? (
+                          <em className="is-done">Concluída</em>
+                        ) : (
+                          <em>
+                            +{goal.defaultBoost} {goal.unit}/conclusão
+                          </em>
+                        )}
+                      </div>
+                    </article>
                   )
                 })}
               </div>
             )}
-          </fieldset>
 
-          <fieldset className="habit-form__group">
-            <legend>Meta do dia</legend>
-            <p className="habit-form__hint">
-              <strong>Feito</strong> = um toque. <strong>Contagem</strong> =
-              progresso (ex.: 8 copos de água).
-            </p>
-            <div className="habit-chips">
-              <button
-                type="button"
-                className={`habit-chip${form.goalKind === 'check' ? ' is-active' : ''}`}
-                onClick={() => patchForm({ goalKind: 'check', goalTarget: 1 })}
-              >
-                Feito / não feito
-              </button>
-              <button
-                type="button"
-                className={`habit-chip${form.goalKind === 'count' ? ' is-active' : ''}`}
-                onClick={() =>
-                  patchForm({
-                    goalKind: 'count',
-                    goalTarget: Math.max(2, form.goalTarget || 8),
-                  })
-                }
-              >
-                Contagem
-              </button>
-            </div>
-            {form.goalKind === 'count' && (
-              <label className="plan-field plan-field--short">
-                <span>Quantas vezes por dia?</span>
-                <input
-                  type="number"
-                  min={2}
-                  max={99}
-                  value={form.goalTarget}
-                  onChange={(e) =>
-                    patchForm({
-                      goalTarget: Math.max(2, Number(e.target.value) || 2),
-                    })
-                  }
-                />
-              </label>
-            )}
-          </fieldset>
-
-          <div className="habit-form__row">
-            <label className="plan-field">
-              <span>Horário preferido</span>
-              <input
-                type="time"
-                value={form.preferredTime}
-                onChange={(e) => patchForm({ preferredTime: e.target.value })}
-                disabled={saving}
-              />
-            </label>
-            <label className="plan-field">
-              <span>Lembrete</span>
-              <div className="habit-reminder">
+            <div className="habit-ideas" aria-label="Ideias rápidas de hábitos">
+              {HABIT_QUICK_IDEAS.map((idea) => (
                 <button
+                  key={idea.name}
                   type="button"
-                  className={`config-switch${form.reminderEnabled ? ' is-on' : ''}`}
-                  role="switch"
-                  aria-checked={form.reminderEnabled}
-                  onClick={() =>
-                    patchForm({
-                      reminderEnabled: !form.reminderEnabled,
-                      reminderTime:
-                        form.reminderTime || form.preferredTime || '09:00',
-                    })
-                  }
+                  className="habit-idea"
+                  onClick={() => applyIdea(idea)}
                 >
-                  <span className="config-switch__knob" />
+                  {idea.name}
                 </button>
-                <input
-                  type="time"
-                  value={form.reminderTime}
-                  disabled={!form.reminderEnabled || saving}
-                  onChange={(e) => patchForm({ reminderTime: e.target.value })}
-                />
-              </div>
-            </label>
-          </div>
+              ))}
+            </div>
 
-          <fieldset className="habit-form__group">
-            <legend>Meta pessoal</legend>
-            <p className="habit-form__hint">
-              Liga a uma meta como “beber 2 L”. Ao concluir o dia, o progresso
-              sobe automaticamente.
-            </p>
-            <label className="plan-field">
-              <span>Associar a</span>
-              <select
-                value={form.linkedPersonalGoalId || ''}
-                onChange={(e) => {
-                  const id = e.target.value || null
-                  const g = personalGoals.find((x) => x.id === id)
-                  patchForm({
-                    linkedPersonalGoalId: id,
-                    personalBoost: id ? form.personalBoost || g?.defaultBoost || 0 : 0,
-                  })
-                }}
-                disabled={saving}
-              >
-                <option value="">Nenhuma</option>
-                {personalGoals.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name} ({g.current}/{g.target} {g.unit})
-                  </option>
-                ))}
-              </select>
-            </label>
-            {personalGoals.length === 0 && (
-              <p className="habit-form__hint">
-                Cria primeiro uma meta pessoal acima.
-              </p>
-            )}
-            {form.linkedPersonalGoalId && (
-              <label className="plan-field">
-                <span>Quanto somar por conclusão (0 = usa o padrão da meta)</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={
-                    form.personalBoost
-                      ? String(form.personalBoost).replace('.', ',')
-                      : ''
-                  }
-                  onChange={(e) => {
-                    const n = Number(
-                      e.target.value.replace(',', '.').replace(/[^\d.]/g, ''),
-                    )
-                    patchForm({
-                      personalBoost: Number.isFinite(n) ? n : 0,
-                    })
-                  }}
-                  disabled={saving}
-                />
-              </label>
-            )}
-          </fieldset>
-
-          <fieldset className="habit-form__group">
-            <legend>Meta de poupança (Finanças)</legend>
-            <p className="habit-form__hint">
-              Opcional — se quiseres ligar também a dinheiro.
-            </p>
-            <label className="plan-field">
-              <span>Associar a</span>
-              <select
-                value={form.linkedGoalId || ''}
-                onChange={(e) =>
-                  patchForm({
-                    linkedGoalId: e.target.value || null,
-                    goalBoostAmount: e.target.value
-                      ? form.goalBoostAmount
-                      : 0,
-                  })
-                }
-                disabled={saving}
-              >
-                <option value="">Nenhuma meta</option>
-                {savingsGoals.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name} ({formatBRL(g.saved)} / {formatBRL(g.target)})
-                  </option>
-                ))}
-              </select>
-            </label>
-            {form.linkedGoalId && (
-              <label className="plan-field">
-                <span>Ao concluir, somar à meta (R$)</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="Ex.: 5,00"
-                  value={
-                    form.goalBoostAmount
-                      ? String(form.goalBoostAmount).replace('.', ',')
-                      : ''
-                  }
-                  onChange={(e) => {
-                    const typed = sanitizeMoneyTyping(e.target.value)
-                    const n = parseBRLInput(typed)
-                    patchForm({
-                      goalBoostAmount: n ?? 0,
-                    })
-                  }}
-                  disabled={saving}
-                />
-              </label>
-            )}
-          </fieldset>
-
-          <p className="habit-form__hint">
-            O lembrete aparece na app perto da hora (com a app aberta). A
-            sequência usa até {HABIT_FREEZES_PER_WEEK} proteções por semana nos
-            dias difíceis.
-          </p>
-
-          <div className="habit-form__actions">
-            {editingId && (
-              <button
-                type="button"
-                className="btn btn--cancel"
-                onClick={closeForm}
-                disabled={saving}
-              >
-                Cancelar
-              </button>
-            )}
-            <Button
-              type="submit"
-              variant="primary"
-              icon={editingId ? <Pencil size={16} /> : <Plus size={16} />}
-              loading={saving}
-              loadingLabel="A guardar…"
-            >
-              {editingId ? 'Guardar alterações' : 'Guardar hábito'}
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {restingToday.length > 0 && (
-        <>
-          <div className="section-label">
-            <h2>Fora de hoje</h2>
-            <span>{restingToday.length}</span>
-          </div>
-          <div className="surface habit-list habit-list--rest">
-            {restingToday.map((h) => (
-              <div key={h.id} className="habit-row is-rest">
-                <span className="habit-info">
-                  <strong>{h.name}</strong>
-                  <span>
-                    {habitMetaLine(
-                      h,
-                      h.linkedPersonalGoalId
-                        ? personalGoalNameById.get(h.linkedPersonalGoalId)
-                        : null,
-                      h.linkedGoalId
-                        ? financeGoalNameById.get(h.linkedGoalId)
-                        : null,
-                    )}
-                  </span>
-                </span>
-                <span className="streak">
-                  <Flame size={12} /> {h.streak}d
-                </span>
-                <div className="habit-row__tools">
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    onClick={() => openEdit(h)}
-                    aria-label={`Editar ${h.name}`}
-                    title="Editar"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <Button
-                    variant="ghost"
-                    className="finance-row__del"
-                    icon={<Trash2 size={14} />}
-                    loading={removingId === h.id}
-                    onClick={() => handleRemove(h.id, h.name)}
-                    title="Excluir"
-                    aria-label={`Excluir ${h.name}`}
-                  />
+            {restingToday.length > 0 && (
+              <>
+                <div className="section-label">
+                  <h2>Fora de hoje</h2>
+                  <span>{restingToday.length}</span>
                 </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+                <div className="surface habit-list habit-list--rest">
+                  {restingToday.map((h) => (
+                    <div key={h.id} className="habit-row is-rest">
+                      <span className="habit-info">
+                        <strong>{h.name}</strong>
+                        <span>
+                          {habitMetaLine(
+                            h,
+                            h.linkedPersonalGoalId
+                              ? personalGoalNameById.get(
+                                  h.linkedPersonalGoalId,
+                                )
+                              : null,
+                            h.linkedGoalId
+                              ? financeGoalNameById.get(h.linkedGoalId)
+                              : null,
+                          )}
+                        </span>
+                      </span>
+                      <span className="streak">
+                        <Flame size={12} /> {h.streak}d
+                      </span>
+                      <div className="habit-row__tools">
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => openEdit(h)}
+                          aria-label={`Editar ${h.name}`}
+                          title="Editar"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <Button
+                          variant="ghost"
+                          className="finance-row__del"
+                          icon={<Trash2 size={14} />}
+                          loading={removingId === h.id}
+                          onClick={() => handleRemove(h.id, h.name)}
+                          title="Excluir"
+                          aria-label={`Excluir ${h.name}`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </PageTransition>
   )
 }

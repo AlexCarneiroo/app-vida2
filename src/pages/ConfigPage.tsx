@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   CloudOff,
+  Gauge,
   KeyRound,
   LogIn,
   LogOut,
@@ -42,12 +43,20 @@ export function ConfigPage() {
   } = useAuth()
   const { theme, setTheme, accent, setAccent } = useTheme()
   const { favoriteIds, toggleFavorite, resetFavorites } = useNavPrefs()
-  const { state, setRestTimerEnabled, setRestSeconds } = useTreino()
+  const {
+    state,
+    setRestTimerEnabled,
+    setRestSeconds,
+    setInstructorMode,
+    setInstructorQuickMode,
+  } = useTreino()
   const { toast } = useToast()
   const { confirm } = useConfirm()
   const online = useOnlineStatus()
   const restTimerEnabled = state.settings.restTimerEnabled
   const restSeconds = state.settings.restSeconds
+  const instructorMode = state.settings.instructorMode
+  const instructorQuickMode = state.settings.instructorQuickMode
 
   const [tab, setTab] = useState<AuthTab>('login')
   const [name, setName] = useState('')
@@ -137,6 +146,23 @@ export function ConfigPage() {
   function changeRestSeconds(sec: typeof restSeconds) {
     setRestSeconds(sec)
     toast(`Descanso ${sec}s`, 'ok')
+  }
+
+  function toggleInstructorMode() {
+    const next = !instructorMode
+    setInstructorMode(next)
+    toast(next ? 'Modo instrutor ligado' : 'Modo instrutor desligado', 'ok')
+  }
+
+  function toggleInstructorQuickMode() {
+    const next = !instructorQuickMode
+    setInstructorQuickMode(next)
+    toast(
+      next
+        ? 'Modo rápido: pergunta a cada 2 séries'
+        : 'Instrutor pergunta após cada série',
+      'ok',
+    )
   }
 
   if (!ready) {
@@ -275,6 +301,53 @@ export function ConfigPage() {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        <div className="config-panel__divider" />
+
+        <div className="config-pref__row">
+          <div className="config-pref__info">
+            <span className="config-pref__icon" aria-hidden>
+              <Gauge size={18} />
+            </span>
+            <div>
+              <strong>Modo instrutor</strong>
+              <p>
+                Recados no Início, esforço após séries e ajuste de carga/reps.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`config-switch${instructorMode ? ' is-on' : ''}`}
+            role="switch"
+            aria-checked={instructorMode}
+            aria-label="Modo instrutor"
+            onClick={toggleInstructorMode}
+          >
+            <span className="config-switch__knob" />
+          </button>
+        </div>
+
+        {instructorMode && (
+          <div className="config-pref__row config-pref__row--nested">
+            <div className="config-pref__info">
+              <div>
+                <strong>Modo rápido</strong>
+                <p>Só pergunta a cada 2 séries concluídas.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className={`config-switch${instructorQuickMode ? ' is-on' : ''}`}
+              role="switch"
+              aria-checked={instructorQuickMode}
+              aria-label="Modo rápido do instrutor"
+              onClick={toggleInstructorQuickMode}
+            >
+              <span className="config-switch__knob" />
+            </button>
           </div>
         )}
       </section>

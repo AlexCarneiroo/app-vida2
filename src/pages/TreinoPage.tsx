@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  ArrowLeftRight,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -15,11 +16,14 @@ import {
   Plus,
   RotateCcw,
   Sparkles,
+  Trash2,
   Trophy,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ExercisePickerSheet } from '../components/treino/ExercisePickerSheet'
 import { HistoryList } from '../components/treino/HistoryList'
+import { InstructorEffortSheet } from '../components/treino/InstructorEffortSheet'
 import { PlanEditor } from '../components/treino/PlanEditor'
 import { PlanPresets } from '../components/treino/PlanPresets'
 import { ProgressionPanel } from '../components/treino/ProgressionPanel'
@@ -38,17 +42,25 @@ import { useBusyAction } from '../hooks/useBusyAction'
 import { getPresetById } from '../data/planPresets'
 import { DAY_LABELS, DAY_NAMES, clonePlan } from '../data/treinoDefaults'
 import { treinoDayLog } from '../lib/activityHeatmap'
+import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
 import { dateKey, weekDates } from '../lib/date'
-import { workoutSetsDone, workoutVolume } from '../lib/treinoStats'
+import {
+  instructorTip,
+  lastSessionMaxWeight,
+  shouldAskInstructor,
+  workoutSetsDone,
+  workoutVolume,
+} from '../lib/treinoStats'
 import type {
   ActiveWorkout,
+  EffortLevel,
   Exercise,
   TreinoSettings,
   WorkoutTemplate,
 } from '../types/treino'
 
-type IdleView = 'plan' | 'edit' | 'progress' | 'presets'
+type IdleView = 'plan' | 'edit' | 'progress' | 'presets' | 'history'
 
 const REST_PRESETS: TreinoSettings['restSeconds'][] = [60, 90, 120]
 
@@ -68,11 +80,15 @@ export function TreinoPage() {
     updateSet,
     addActiveSet,
     removeActiveSet,
+    addActiveExercise,
+    replaceActiveExercise,
+    removeActiveExercise,
     applySuggestedWeight,
     suggestionFor,
     completeWorkout,
     setRestSeconds,
     setRestTimerEnabled,
+    applyInstructorEffort,
     updateTemplate,
     addTemplate,
     removeTemplate,
@@ -92,6 +108,7 @@ export function TreinoPage() {
     updateSavedPlanFromCurrent,
     stats,
   } = useTreino()
+  const { poorSleepForTraining, lastNightSleep } = useSaude()
 
   const { toast } = useToast()
   const { confirm } = useConfirm()
@@ -108,13 +125,58 @@ export function TreinoPage() {
     activeSavedPlanId: string | null
   } | null>(null)
   const [selectedDayKey, setSelectedDayKey] = useState<string>(() => dateKey())
+  const [picker, setPicker] = useState<
+    null | { mode: 'add' } | { mode: 'swap'; exerciseId: string }
+  >(null)
+  const [effortPrompt, setEffortPrompt] = useState<{
+    exerciseId: string
+    exerciseName: string
+    lastWeight: number | null
+  } | null>(null)
   const days = useMemo(() => weekDates(), [])
 
   const active = state.active
   const showSession = Boolean(active && inSession)
-  const showOverview = !showSession
+  const showSummary = Boolean(lastSummary) && !showSession
+  const showHome = !showSession && !showSummary && idleView === 'plan'
+  const showPanel = !showSession && !showSummary && idleView !== 'plan'
+  const panelMeta = showSummary
+    ? {
+        kicker: 'Sessão',
+        title: 'Sessão concluída',
+        sub: lastSummary
+          ? `${lastSummary.name} · resumo desta sessão.`
+          : 'Resumo desta sessão.',
+      }
+    : idleView === 'edit'
+      ? {
+          kicker: 'Plano',
+          title: 'Editar plano',
+          sub: 'Monta um dia de cada vez e guarda quando estiver pronto.',
+        }
+      : idleView === 'presets'
+        ? {
+            kicker: 'Plano',
+            title: 'Planos',
+            sub: 'Escolhe um plano pronto ou um que tenhas guardado.',
+          }
+        : idleView === 'progress'
+          ? {
+              kicker: 'Evolução',
+              title: 'Progressão',
+              sub: 'Cargas e evolução por exercício.',
+            }
+          : idleView === 'history'
+            ? {
+                kicker: 'Sessões',
+                title: 'Histórico',
+                sub: 'Todas as sessões recentes — toca para ver as séries.',
+              }
+            : null
   const restSeconds = state.settings.restSeconds
   const restTimerEnabled = state.settings.restTimerEnabled
+  const instructorMode = state.settings.instructorMode
+  const instructorQuickMode = state.settings.instructorQuickMode
   const treinoLog = useMemo(
     () => treinoDayLog(state.history),
     [state.history],
@@ -188,9 +250,16 @@ export function TreinoPage() {
   }, [active])
 
   useEffect(() => {
+    if (showPanel || showSession || showSummary) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [showPanel, showSession, showSummary, idleView])
+
+  useEffect(() => {
     if (!active) {
       setExpanded(null)
       setRest(null)
+      setEffortPrompt(null)
       return
     }
     if (inSession && !expanded) {
@@ -215,9 +284,29 @@ export function TreinoPage() {
       if (restTimerEnabled) {
         setRest({ key: Date.now(), seconds: restSeconds })
       }
-      const exerciseDone = exercise.sets.every((s) =>
-        s.id === setId ? true : s.done,
-      )
+      const remaining = exercise.sets.filter(
+        (s) => s.id !== setId && !s.done,
+      ).length
+      const doneCountAfter =
+        exercise.sets.filter((s) => s.done || s.id === setId).length
+      const exerciseDone = remaining === 0
+      if (
+        instructorMode &&
+        exercise.muscle !== 'cardio' &&
+        shouldAskInstructor(doneCountAfter, remaining, instructorQuickMode)
+      ) {
+        const lastWeight = lastSessionMaxWeight(
+          state.history,
+          exercise.sourceId,
+          exercise.name,
+          active?.startedAt,
+        )
+        setEffortPrompt({
+          exerciseId: exercise.id,
+          exerciseName: exercise.name,
+          lastWeight,
+        })
+      }
       if (exerciseDone && active) {
         const idx = active.exercises.findIndex((e) => e.id === exercise.id)
         const next = idx >= 0 ? active.exercises[idx + 1] : null
@@ -232,6 +321,14 @@ export function TreinoPage() {
         setExpanded(exercise.id)
       }
     }
+  }
+
+  function handleInstructorEffort(effort: EffortLevel) {
+    if (!effortPrompt) return
+    const adjust = applyInstructorEffort(effortPrompt.exerciseId, effort)
+    setEffortPrompt(null)
+    if (!adjust) return
+    toast(instructorTip(effort, adjust), effort === 'hard' ? 'warn' : 'ok')
   }
 
   function handleStart(template: WorkoutTemplate) {
@@ -264,6 +361,19 @@ export function TreinoPage() {
     setIdleView('plan')
     setRest(null)
     toast('Progresso guardado — podes continuar quando quiseres', 'info')
+  }
+
+  function closePanel() {
+    if (showSummary) {
+      clearSummary()
+      setIdleView('plan')
+      return
+    }
+    if (idleView === 'edit') {
+      handleEditorCancel()
+      return
+    }
+    setIdleView('plan')
   }
 
   function resumeSession() {
@@ -316,10 +426,30 @@ export function TreinoPage() {
     toast('Treino descartado', 'info')
   }
 
-  function handleComplete() {
+  async function handleComplete() {
+    if (!active || stats.doneSets === 0) return
+    let syncStructure = false
+    if (active.structureDirty) {
+      syncStructure = await confirm({
+        title: 'Atualizar o plano?',
+        message:
+          'Alteraste exercícios nesta sessão. Queres guardar estas mudanças no plano da semana? Se escolheres manter, o plano fica igual e só regista este treino no histórico.',
+        confirmLabel: 'Guardar no plano',
+        cancelLabel: 'Manter plano',
+        danger: false,
+      })
+    }
     void runComplete(() => {
-      completeWorkout()
-      toast('Treino concluído', 'ok')
+      completeWorkout({ syncStructure })
+      setInSession(false)
+      setIdleView('plan')
+      setRest(null)
+      toast(
+        syncStructure
+          ? 'Treino concluído — plano atualizado'
+          : 'Treino concluído',
+        'ok',
+      )
     })
   }
 
@@ -334,30 +464,64 @@ export function TreinoPage() {
     toast('Série excluída', 'info')
   }
 
+  async function handleRemoveActiveExercise(exerciseId: string) {
+    if (!active || active.exercises.length <= 1) {
+      toast('Mantém pelo menos um exercício', 'warn')
+      return
+    }
+    const ex = active.exercises.find((e) => e.id === exerciseId)
+    const ok = await confirm({
+      title: 'Remover exercício?',
+      message: ex
+        ? `“${ex.name}” sai desta sessão. No fim podes escolher se atualizas o plano.`
+        : 'Este exercício sai da sessão.',
+      confirmLabel: 'Remover',
+    })
+    if (!ok) return
+    removeActiveExercise(exerciseId)
+    if (expanded === exerciseId) setExpanded(null)
+    toast('Exercício removido da sessão', 'info')
+  }
+
   return (
     <PageTransition>
       <header className="page-header">
         <div>
-          <p className="page-kicker">{showSession ? 'Sessão' : 'Corpo'}</p>
-          <h1 className="page-title">Treino</h1>
-          {showOverview && (
+          <p className="page-kicker">
+            {showSession
+              ? 'Sessão'
+              : (showPanel || showSummary) && panelMeta
+                ? panelMeta.kicker
+                : 'Corpo'}
+          </p>
+          <h1 className="page-title">
+            {showSession
+              ? 'Treino'
+              : (showPanel || showSummary) && panelMeta
+                ? panelMeta.title
+                : 'Treino'}
+          </h1>
+          {showHome && (
             <p className="page-sub">
               Edita um dia de cada vez. Dias sem treino ficam como descanso
               (sábado e domingo incluídos).
             </p>
           )}
+          {(showPanel || showSummary) && panelMeta?.sub && (
+            <p className="page-sub">{panelMeta.sub}</p>
+          )}
         </div>
-        {showSession && (
+        {(showSession || showPanel || showSummary) && (
           <button
             type="button"
             className="btn btn--ghost"
-            onClick={goToOverview}
+            onClick={showSession ? goToOverview : closePanel}
           >
             <ChevronLeft size={16} />
             Voltar
           </button>
         )}
-        {showOverview && active && (
+        {showHome && active && (
           <button
             type="button"
             className="btn btn--primary"
@@ -367,7 +531,7 @@ export function TreinoPage() {
             Continuar
           </button>
         )}
-        {showOverview && !active && todayTemplate && !isTodayDone && idleView === 'plan' && (
+        {showHome && !active && todayTemplate && !isTodayDone && (
           <button
             type="button"
             className="btn btn--primary"
@@ -379,8 +543,21 @@ export function TreinoPage() {
         )}
       </header>
 
-      {showOverview && (
+      {showHome && (
         <>
+          {poorSleepForTraining && (
+            <aside className="surface treino-sleep-hint" aria-label="Aviso de sono">
+              <Moon size={16} aria-hidden />
+              <div>
+                <strong>Sono curto ontem</strong>
+                <span>
+                  {lastNightSleep
+                    ? `${lastNightSleep.hours}h — aquecimento extra ou volume reduzido.`
+                    : 'Considera aquecimento extra ou volume reduzido.'}
+                </span>
+              </div>
+            </aside>
+          )}
           {active && (
             <button
               type="button"
@@ -452,21 +629,10 @@ export function TreinoPage() {
         </>
       )}
 
-      <AnimatePresence>
-        {lastSummary && showOverview && !active && (
-          <div className="workout-summary-wrap">
-            <WorkoutSummaryCard
-              summary={lastSummary}
-              onClose={clearSummary}
-            />
-          </div>
-        )}
-      </AnimatePresence>
-
       <AnimatePresence mode="wait">
         {showSession && active ? (
           <motion.div
-            key="active"
+            key="session"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
@@ -539,8 +705,24 @@ export function TreinoPage() {
 
             <div className="section-label">
               <h2>Exercícios</h2>
-              <span>{active.exercises.length} movimentos</span>
+              <div className="treino-section-actions">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => setPicker({ mode: 'add' })}
+                >
+                  <Plus size={16} />
+                  Adicionar
+                </button>
+              </div>
             </div>
+
+            {active.structureDirty && (
+              <p className="treino-session-hint">
+                Alteraste a lista desta sessão. Ao concluir, podes guardar no
+                plano ou manter o plano atual.
+              </p>
+            )}
 
             <motion.div
               className="treino-exercises"
@@ -596,6 +778,30 @@ export function TreinoPage() {
                             ease: [0.22, 1, 0.36, 1],
                           }}
                         >
+                          <div className="treino-ex__session-ops">
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              onClick={() =>
+                                setPicker({ mode: 'swap', exerciseId: ex.id })
+                              }
+                            >
+                              <ArrowLeftRight size={14} />
+                              Trocar
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--ghost is-danger-ghost"
+                              onClick={() =>
+                                void handleRemoveActiveExercise(ex.id)
+                              }
+                              disabled={active.exercises.length <= 1}
+                            >
+                              <Trash2 size={14} />
+                              Remover
+                            </button>
+                          </div>
+
                           {suggestion && ex.muscle !== 'cardio' && (
                             <button
                               type="button"
@@ -705,75 +911,82 @@ export function TreinoPage() {
               })}
             </motion.div>
           </motion.div>
-        ) : (
+        ) : showSummary && lastSummary ? (
           <motion.div
-            key={`idle-${idleView}`}
+            key="summary"
+            className="treino-panel"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <WorkoutSummaryCard
+              summary={lastSummary}
+              onClose={() => {
+                clearSummary()
+                setIdleView('plan')
+              }}
+            />
+          </motion.div>
+        ) : showPanel ? (
+          <motion.div
+            key={`panel-${idleView}`}
+            className="treino-panel"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
             {idleView === 'edit' ? (
-              <>
-                <div className="section-label">
-                  <h2>Editar plano</h2>
-                  <span>Um dia de cada vez</span>
-                </div>
-                <PlanEditor
-                  plan={plan}
-                  activeSavedPlanId={state.activeSavedPlanId}
-                  onUpdateTemplate={updateTemplate}
-                  onAddTemplate={addTemplate}
-                  onRemoveTemplate={removeTemplate}
-                  onAddExercise={addExercise}
-                  onUpdateExercise={updateExercise}
-                  onRemoveExercise={removeExercise}
-                  onAddSet={addTemplateSet}
-                  onRemoveSet={removeTemplateSet}
-                  onUpdateSet={updateTemplateSet}
-                  onReset={resetPlan}
-                  onSavePlan={saveCurrentPlan}
-                  onUpdateSavedPlan={updateSavedPlanFromCurrent}
-                  onDone={handleEditorDone}
-                  onCancel={handleEditorCancel}
-                />
-              </>
+              <PlanEditor
+                plan={plan}
+                activeSavedPlanId={state.activeSavedPlanId}
+                onUpdateTemplate={updateTemplate}
+                onAddTemplate={addTemplate}
+                onRemoveTemplate={removeTemplate}
+                onAddExercise={addExercise}
+                onUpdateExercise={updateExercise}
+                onRemoveExercise={removeExercise}
+                onAddSet={addTemplateSet}
+                onRemoveSet={removeTemplateSet}
+                onUpdateSet={updateTemplateSet}
+                onReset={resetPlan}
+                onSavePlan={saveCurrentPlan}
+                onUpdateSavedPlan={updateSavedPlanFromCurrent}
+                onDone={handleEditorDone}
+                onCancel={handleEditorCancel}
+              />
             ) : idleView === 'presets' ? (
-              <>
-                <div className="section-label">
-                  <h2>Planos</h2>
-                  <span>Prontos e guardados</span>
-                </div>
-                <PlanPresets
-                  activePresetId={state.activePresetId}
-                  activeSavedPlanId={state.activeSavedPlanId}
-                  savedPlans={state.savedPlans ?? []}
-                  onApply={(id) => {
-                    applyPreset(id)
-                    toast('Plano aplicado', 'ok')
-                  }}
-                  onApplySaved={applySavedPlan}
-                  onRemoveSaved={removeSavedPlan}
-                  onCreateCustom={openCustomPlanBuilder}
-                  onDone={() => setIdleView('plan')}
-                />
-              </>
-            ) : idleView === 'progress' ? (
-              <>
-                <div className="section-label">
-                  <h2>Progressão</h2>
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    onClick={() => setIdleView('plan')}
-                  >
-                    Voltar
-                  </button>
-                </div>
-                <ProgressionPanel items={progression} />
-              </>
+              <PlanPresets
+                activePresetId={state.activePresetId}
+                activeSavedPlanId={state.activeSavedPlanId}
+                savedPlans={state.savedPlans ?? []}
+                onApply={(id) => {
+                  applyPreset(id)
+                  toast('Plano aplicado', 'ok')
+                }}
+                onApplySaved={applySavedPlan}
+                onRemoveSaved={removeSavedPlan}
+                onCreateCustom={openCustomPlanBuilder}
+                onDone={() => setIdleView('plan')}
+              />
+            ) : idleView === 'history' ? (
+              <HistoryList history={state.history} />
             ) : (
-              <>
+              <ProgressionPanel
+                items={progression}
+                history={state.history}
+              />
+            )}
+          </motion.div>
+        ) : showHome ? (
+          <motion.div
+            key="home-plan"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          >
                 {isTodayDone ? (
                   <div className="surface treino-done-banner">
                     <div className="treino-done-banner__icon">
@@ -931,9 +1144,23 @@ export function TreinoPage() {
                   <>
                     <div className="section-label">
                       <h2>Histórico recente</h2>
-                      <span>{state.history.length} sessões</span>
+                      <span>
+                        {state.history.length > 6
+                          ? `6 de ${state.history.length}`
+                          : `${state.history.length} sessões`}
+                      </span>
                     </div>
-                    <HistoryList history={state.history} />
+                    <HistoryList history={state.history} limit={6} />
+                    {state.history.length > 6 && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost treino-history-more"
+                        onClick={() => setIdleView('history')}
+                      >
+                        Ver mais
+                        <ChevronDown size={16} />
+                      </button>
+                    )}
                   </>
                 )}
 
@@ -961,35 +1188,67 @@ export function TreinoPage() {
                     </div>
                   </div>
                 )}
-              </>
-            )}
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {restTimerEnabled && rest !== null && (
-          <motion.div
-            className="rest-timer-wrap"
-            initial={{ y: 40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 40, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-          >
-            <RestTimer
-              key={rest.key}
-              duration={rest.seconds}
-              restartKey={rest.key}
-              preferredSeconds={restSeconds}
-              onPreferredChange={(sec) => {
-                setRestSeconds(sec)
-                setRest({ key: Date.now(), seconds: sec })
-              }}
-              onClose={() => setRest(null)}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {restTimerEnabled && rest !== null && (
+        <RestTimer
+          key={rest.key}
+          duration={rest.seconds}
+          restartKey={rest.key}
+          preferredSeconds={restSeconds}
+          onPreferredChange={(sec) => {
+            setRestSeconds(sec)
+            setRest({ key: Date.now(), seconds: sec })
+          }}
+          onClose={() => setRest(null)}
+        />
+      )}
+
+      {effortPrompt && (
+        <InstructorEffortSheet
+          exerciseName={effortPrompt.exerciseName}
+          lastWeight={effortPrompt.lastWeight}
+          quickMode={instructorQuickMode}
+          onPick={handleInstructorEffort}
+          onSkip={() => setEffortPrompt(null)}
+        />
+      )}
+
+      {picker && (
+        <ExercisePickerSheet
+          title={picker.mode === 'add' ? 'Adicionar exercício' : 'Trocar exercício'}
+          confirmLabel={picker.mode === 'add' ? 'Adicionar' : 'Trocar'}
+          initial={
+            picker.mode === 'swap' && active
+              ? (() => {
+                  const ex = active.exercises.find(
+                    (e) => e.id === picker.exerciseId,
+                  )
+                  return ex
+                    ? { name: ex.name, muscle: ex.muscle }
+                    : undefined
+                })()
+              : undefined
+          }
+          onCancel={() => setPicker(null)}
+          onConfirm={({ name, muscle }) => {
+            if (picker.mode === 'add') {
+              const id = addActiveExercise({ name, muscle })
+              if (id) {
+                setExpanded(id)
+                toast(`${name} adicionado`, 'ok')
+              }
+            } else {
+              replaceActiveExercise(picker.exerciseId, { name, muscle })
+              setExpanded(picker.exerciseId)
+              toast(`Trocado para ${name}`, 'ok')
+            }
+            setPicker(null)
+          }}
+        />
+      )}
     </PageTransition>
   )
 }

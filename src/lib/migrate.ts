@@ -3,7 +3,16 @@ import {
   normalizeHabit,
   normalizePersonalGoal,
 } from '../data/habitosDefaults'
-import { emptyNutricaoState, rebuildDayLog } from '../data/nutricaoDefaults'
+import {
+  clampWaterGoalMl,
+  clampWaterServingMl,
+  DEFAULT_WATER_SERVING_ML,
+  emptyMealPlan,
+  emptyNutricaoState,
+  rebuildDayLog,
+} from '../data/nutricaoDefaults'
+import { emptyJogosState } from '../data/jogosDefaults'
+import { defaultWeeklyGoals, normalizeSex } from '../data/saudeDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
 import { normalizeExerciseName } from './treinoStats'
 import {
@@ -12,10 +21,38 @@ import {
   wrapDoc,
   type PersistedDoc,
 } from './dataVersion'
-import type { FinancasState, SavingsGoal, Transaction } from '../types/financas'
+import { normalizeBill, normalizeBudget } from '../data/financasDefaults'
+import type {
+  CategoryBudget,
+  FinancasState,
+  RecurringBill,
+  SavingsGoal,
+  Transaction,
+} from '../types/financas'
 import type { Habit, HabitosState, PersonalGoal } from '../types/habitos'
-import type { FoodItem, MealEntry, MealSlot, NutricaoState } from '../types/nutricao'
+import type {
+  FoodItem,
+  MealEntry,
+  MealPlan,
+  MealSlot,
+  NutricaoState,
+  PlanItem,
+  Weekday,
+} from '../types/nutricao'
+import type { GameBest, GameSession, JogosState } from '../types/jogos'
 import type { RotinaState, RoutineBlock } from '../types/rotina'
+import type {
+  BodyMetric,
+  HealthCheckIn,
+  LabExam,
+  Medication,
+  ProgressPhoto,
+  ProNote,
+  QuickConsult,
+  SaudeState,
+  SleepEntry,
+  SleepQuality,
+} from '../types/saude'
 import type {
   ActiveWorkout,
   Exercise,
@@ -28,6 +65,8 @@ import type {
 const defaultSettings: TreinoSettings = {
   restSeconds: 90,
   restTimerEnabled: true,
+  instructorMode: true,
+  instructorQuickMode: false,
 }
 
 
@@ -91,6 +130,14 @@ export function normalizeTreino(raw: unknown): TreinoState {
         typeof parsed.settings?.restTimerEnabled === 'boolean'
           ? parsed.settings.restTimerEnabled
           : defaultSettings.restTimerEnabled,
+      instructorMode:
+        typeof parsed.settings?.instructorMode === 'boolean'
+          ? parsed.settings.instructorMode
+          : defaultSettings.instructorMode,
+      instructorQuickMode:
+        typeof parsed.settings?.instructorQuickMode === 'boolean'
+          ? parsed.settings.instructorQuickMode
+          : defaultSettings.instructorQuickMode,
     },
     activePresetId:
       parsed.activePresetId === undefined ? null : parsed.activePresetId,
@@ -121,9 +168,19 @@ export function normalizeFinancas(raw: unknown): FinancasState {
       saved: Math.max(0, Number(g.saved) || 0),
     }))
 
+  const bills = asArray<RecurringBill>(parsed.bills)
+    .filter((b) => b && typeof b.id === 'string')
+    .map((b) => normalizeBill(b))
+
+  const budgets = asArray<CategoryBudget>(parsed.budgets)
+    .filter((b) => b && typeof b.id === 'string')
+    .map((b) => normalizeBudget(b))
+
   return {
     transactions,
     goals,
+    bills,
+    budgets,
   }
 }
 
@@ -228,9 +285,70 @@ export function mergeFinancasSafe(
     })
   }
 
+  const billMap = new Map<string, RecurringBill>()
+  const bFirst = preferRemote ? remote.bills : local.bills
+  const bSecond = preferRemote ? local.bills : remote.bills
+  for (const b of bFirst ?? []) billMap.set(b.id, b)
+  for (const b of bSecond ?? []) {
+    const prev = billMap.get(b.id)
+    if (!prev) {
+      billMap.set(b.id, b)
+      continue
+    }
+    const lastPaid =
+      (prev.lastPaidMonth || '') >= (b.lastPaidMonth || '')
+        ? prev.lastPaidMonth
+        : b.lastPaidMonth
+    billMap.set(b.id, {
+      ...prev,
+      ...(preferRemote ? b : {}),
+      lastPaidMonth: lastPaid,
+      name: preferRemote
+        ? b.name || prev.name
+        : prev.name || b.name,
+      amount: Math.max(prev.amount, b.amount) > 0
+        ? preferRemote
+          ? b.amount || prev.amount
+          : prev.amount || b.amount
+        : prev.amount,
+    })
+  }
+
+  const budgetMap = new Map<string, CategoryBudget>()
+  const bdFirst = preferRemote ? remote.budgets : local.budgets
+  const bdSecond = preferRemote ? local.budgets : remote.budgets
+  for (const b of bdFirst ?? []) budgetMap.set(b.id, b)
+  for (const b of bdSecond ?? []) {
+    const prev = budgetMap.get(b.id)
+    if (!prev) {
+      budgetMap.set(b.id, b)
+      continue
+    }
+    // Um orçamento por categoria: fica o da preferência, limite o maior
+    if (prev.category === b.category) {
+      budgetMap.set(b.id, {
+        ...prev,
+        limit: Math.max(prev.limit, b.limit),
+        category: preferRemote ? b.category : prev.category,
+      })
+    } else if (!preferRemote) {
+      /* keep prev */
+    } else {
+      budgetMap.set(b.id, b)
+    }
+  }
+  // Deduplica por categoria
+  const byCat = new Map<string, CategoryBudget>()
+  for (const b of budgetMap.values()) {
+    const prev = byCat.get(b.category)
+    if (!prev || b.limit > prev.limit) byCat.set(b.category, b)
+  }
+
   return {
     transactions: [...txMap.values()],
     goals: [...goalMap.values()],
+    bills: [...billMap.values()],
+    budgets: [...byCat.values()],
   }
 }
 
@@ -407,18 +525,23 @@ function asMacros(raw: unknown) {
   }
 }
 
+const FOOD_SOURCES = ['taco', 'off', 'usda', 'pantry', 'custom'] as const
+
 function normalizeFood(raw: unknown): FoodItem | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Partial<FoodItem>
   if (typeof o.id !== 'string' || !o.id) return null
   const name = o.name?.trim()
   if (!name) return null
+  const source = FOOD_SOURCES.includes(o.source as (typeof FOOD_SOURCES)[number])
+    ? (o.source as FoodItem['source'])
+    : undefined
   return {
     id: o.id,
     code: o.code?.trim() || undefined,
     name,
     brand: o.brand?.trim() || undefined,
-    source: o.source,
+    source,
     per100: asMacros(o.per100),
   }
 }
@@ -430,6 +553,8 @@ function normalizeEntry(raw: unknown): MealEntry | null {
   const food = normalizeFood(o.food)
   if (!food) return null
   const meal = MEAL_IDS.includes(o.meal as MealSlot) ? (o.meal as MealSlot) : 'almoco'
+  const planItemId =
+    typeof o.planItemId === 'string' && o.planItemId ? o.planItemId : undefined
   return {
     id: o.id,
     dateKey: o.dateKey || '',
@@ -437,7 +562,40 @@ function normalizeEntry(raw: unknown): MealEntry | null {
     food,
     grams: Math.max(1, Math.round(Number(o.grams) || 100)),
     createdAt: o.createdAt || new Date().toISOString(),
+    planItemId,
   }
+}
+
+function normalizePlanItem(raw: unknown): PlanItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<PlanItem>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const food = normalizeFood(o.food)
+  if (!food) return null
+  const meal = MEAL_IDS.includes(o.meal as MealSlot) ? (o.meal as MealSlot) : 'almoco'
+  return {
+    id: o.id,
+    meal,
+    food,
+    grams: Math.max(1, Math.round(Number(o.grams) || 100)),
+    note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+  }
+}
+
+function normalizeMealPlan(raw: unknown): MealPlan {
+  const base = emptyMealPlan()
+  if (!raw || typeof raw !== 'object') return base
+  const daysRaw = (raw as Partial<MealPlan>).days
+  if (!daysRaw || typeof daysRaw !== 'object') return base
+  const days = { ...base.days }
+  for (let d = 0; d <= 6; d++) {
+    const key = d as Weekday
+    const list = asArray<PlanItem>((daysRaw as Record<string, unknown>)[String(d)])
+      .map(normalizePlanItem)
+      .filter((p): p is PlanItem => Boolean(p))
+    days[key] = list
+  }
+  return { days }
 }
 
 export function normalizeNutricao(raw: unknown): NutricaoState {
@@ -463,16 +621,43 @@ export function normalizeNutricao(raw: unknown): NutricaoState {
     const n = Number(v)
     if (n > 0) dayLog[k] = Math.max(dayLog[k] ?? 0, n)
   }
+
+  // Legado: waterGoal ≤ 20 = contagem em copos → converte para ml
+  const rawGoal = Number(parsed.waterGoal)
+  const hasServing =
+    typeof (parsed as { waterServingMl?: number }).waterServingMl === 'number'
+  const rawServing = Number(
+    (parsed as { waterServingMl?: number }).waterServingMl,
+  )
+  const legacyCups = Number.isFinite(rawGoal) && rawGoal > 0 && rawGoal <= 20
+  const servingMl = clampWaterServingMl(
+    hasServing && Number.isFinite(rawServing)
+      ? rawServing
+      : legacyCups
+        ? 250
+        : DEFAULT_WATER_SERVING_ML,
+  )
+  let waterGoal = clampWaterGoalMl(
+    legacyCups ? rawGoal * servingMl : rawGoal || base.waterGoal,
+  )
+  if (legacyCups) {
+    for (const k of Object.keys(waterByDay)) {
+      waterByDay[k] = waterByDay[k] * servingMl
+    }
+  }
+
   return {
     kcalGoal: Math.max(800, Number(parsed.kcalGoal) || base.kcalGoal),
     proteinGoal: Math.max(20, Number(parsed.proteinGoal) || base.proteinGoal),
     carbsGoal: Math.max(20, Number(parsed.carbsGoal) || base.carbsGoal),
     fatGoal: Math.max(15, Number(parsed.fatGoal) || base.fatGoal),
-    waterGoal: Math.max(4, Math.min(16, Number(parsed.waterGoal) || base.waterGoal)),
+    waterGoal,
+    waterServingMl: servingMl,
     entries,
     favorites,
     waterByDay,
     dayLog,
+    mealPlan: normalizeMealPlan(parsed.mealPlan),
   }
 }
 
@@ -622,6 +807,21 @@ export function mergeNutricaoSafe(
     dayLog[k] = Math.max(dayLog[k] ?? 0, v)
   }
 
+  const planDays = emptyMealPlan().days
+  for (let d = 0; d <= 6; d++) {
+    const key = d as Weekday
+    const map = new Map<string, PlanItem>()
+    const sec = preferRemote
+      ? local.mealPlan?.days?.[key] ?? []
+      : remote.mealPlan?.days?.[key] ?? []
+    const pri = preferRemote
+      ? remote.mealPlan?.days?.[key] ?? []
+      : local.mealPlan?.days?.[key] ?? []
+    for (const p of sec) map.set(p.id, p)
+    for (const p of pri) map.set(p.id, p)
+    planDays[key] = [...map.values()]
+  }
+
   const goals = preferRemote ? remote : local
   return {
     kcalGoal: goals.kcalGoal,
@@ -629,9 +829,387 @@ export function mergeNutricaoSafe(
     carbsGoal: goals.carbsGoal,
     fatGoal: goals.fatGoal,
     waterGoal: goals.waterGoal,
+    waterServingMl: goals.waterServingMl ?? DEFAULT_WATER_SERVING_ML,
     entries,
     favorites: [...favMap.values()],
     waterByDay,
     dayLog,
+    mealPlan: { days: planDays },
+  }
+}
+
+function asQuality(n: unknown): SleepQuality {
+  const v = Math.round(Number(n) || 3)
+  if (v <= 1) return 1
+  if (v === 2) return 2
+  if (v === 4) return 4
+  if (v >= 5) return 5
+  return 3
+}
+
+function optNum(n: unknown): number | undefined {
+  const v = Number(n)
+  if (!Number.isFinite(v) || v <= 0) return undefined
+  return Math.round(v * 10) / 10
+}
+
+function normalizeMetric(raw: unknown): BodyMetric | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<BodyMetric>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const weightKg = Number(o.weightKg)
+  if (!Number.isFinite(weightKg) || weightKg <= 0) return null
+  return {
+    id: o.id,
+    dateKey: o.dateKey || '',
+    weightKg: Math.round(weightKg * 10) / 10,
+    waistCm: optNum(o.waistCm),
+    armCm: optNum(o.armCm),
+    bodyFatPct: optNum(o.bodyFatPct),
+    leanMassKg: optNum(o.leanMassKg),
+    note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeSleep(raw: unknown): SleepEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<SleepEntry>
+  if (typeof o.id !== 'string' || !o.id) return null
+  return {
+    id: o.id,
+    dateKey: o.dateKey || '',
+    hours: Math.max(0, Math.min(24, Number(o.hours) || 0)),
+    quality: asQuality(o.quality),
+    bedTime: typeof o.bedTime === 'string' ? o.bedTime : null,
+    wakeTime: typeof o.wakeTime === 'string' ? o.wakeTime : null,
+    note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+  }
+}
+
+function normalizeExam(raw: unknown): LabExam | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<LabExam>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const name = o.name?.trim()
+  if (!name) return null
+  return {
+    id: o.id,
+    dateKey: o.dateKey || '',
+    name,
+    value: (o.value ?? '—').toString().trim() || '—',
+    unit: typeof o.unit === 'string' && o.unit.trim() ? o.unit.trim() : undefined,
+    refRange:
+      typeof o.refRange === 'string' && o.refRange.trim()
+        ? o.refRange.trim()
+        : undefined,
+    note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+    nextDueDateKey:
+      typeof o.nextDueDateKey === 'string' && o.nextDueDateKey
+        ? o.nextDueDateKey
+        : null,
+    attachmentName:
+      typeof o.attachmentName === 'string' ? o.attachmentName : undefined,
+    attachmentDataUrl:
+      typeof o.attachmentDataUrl === 'string' &&
+      o.attachmentDataUrl.startsWith('data:')
+        ? o.attachmentDataUrl
+        : undefined,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeCheckIn(raw: unknown): HealthCheckIn | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<HealthCheckIn>
+  if (typeof o.id !== 'string' || !o.id) return null
+  return {
+    id: o.id,
+    dateKey: o.dateKey || '',
+    energy: asQuality(o.energy),
+    mood: asQuality(o.mood),
+    symptoms:
+      typeof o.symptoms === 'string' && o.symptoms.trim()
+        ? o.symptoms.trim()
+        : undefined,
+  }
+}
+
+function normalizeMedication(raw: unknown): Medication | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<Medication>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const name = o.name?.trim()
+  if (!name) return null
+  return {
+    id: o.id,
+    name,
+    dose: typeof o.dose === 'string' ? o.dose : '',
+    time: typeof o.time === 'string' && o.time ? o.time : '08:00',
+    enabled: o.enabled !== false,
+    lastTakenDateKey:
+      typeof o.lastTakenDateKey === 'string' ? o.lastTakenDateKey : null,
+  }
+}
+
+function normalizePhoto(raw: unknown): ProgressPhoto | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<ProgressPhoto>
+  if (typeof o.id !== 'string' || !o.id) return null
+  if (typeof o.dataUrl !== 'string' || !o.dataUrl.startsWith('data:image')) {
+    return null
+  }
+  return {
+    id: o.id,
+    dateKey: o.dateKey || '',
+    dataUrl: o.dataUrl,
+    note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeProNote(raw: unknown): ProNote | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<ProNote>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const body = o.body?.trim()
+  if (!body) return null
+  return {
+    id: o.id,
+    author: o.author?.trim() || 'Dra. Pulse',
+    body,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeConsult(raw: unknown): QuickConsult | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<QuickConsult>
+  if (!o.dateKey || !Array.isArray(o.plan)) return null
+  return {
+    dateKey: o.dateKey,
+    q1: String(o.q1 ?? ''),
+    q2: String(o.q2 ?? ''),
+    q3: String(o.q3 ?? ''),
+    plan: o.plan.map(String).filter(Boolean).slice(0, 8),
+  }
+}
+
+export function normalizeSaude(raw: unknown): SaudeState {
+  const parsed = (raw && typeof raw === 'object' ? raw : {}) as Partial<SaudeState>
+  return {
+    heightCm: Math.max(0, Math.min(250, Math.round(Number(parsed.heightCm) || 0))),
+    sex: normalizeSex(parsed.sex),
+    weightGoalKg: Math.max(0, Math.min(400, Number(parsed.weightGoalKg) || 0)),
+    sleepReminderEnabled: Boolean(parsed.sleepReminderEnabled),
+    sleepReminderTime:
+      typeof parsed.sleepReminderTime === 'string' && parsed.sleepReminderTime
+        ? parsed.sleepReminderTime
+        : '22:30',
+    weeklyGoals: defaultWeeklyGoals(parsed.weeklyGoals),
+    metrics: asArray<BodyMetric>(parsed.metrics)
+      .map(normalizeMetric)
+      .filter((m): m is BodyMetric => Boolean(m)),
+    sleep: asArray<SleepEntry>(parsed.sleep)
+      .map(normalizeSleep)
+      .filter((s): s is SleepEntry => Boolean(s)),
+    exams: asArray<LabExam>(parsed.exams)
+      .map(normalizeExam)
+      .filter((e): e is LabExam => Boolean(e)),
+    checkIns: asArray<HealthCheckIn>(parsed.checkIns)
+      .map(normalizeCheckIn)
+      .filter((c): c is HealthCheckIn => Boolean(c)),
+    medications: asArray<Medication>(parsed.medications)
+      .map(normalizeMedication)
+      .filter((m): m is Medication => Boolean(m)),
+    photos: asArray<ProgressPhoto>(parsed.photos)
+      .map(normalizePhoto)
+      .filter((p): p is ProgressPhoto => Boolean(p))
+      .slice(0, 8),
+    lastConsult: normalizeConsult(parsed.lastConsult),
+    proNotes: asArray<ProNote>(parsed.proNotes)
+      .map(normalizeProNote)
+      .filter((n): n is ProNote => Boolean(n))
+      .slice(0, 40),
+  }
+}
+
+export function migrateSaudeDoc(input: unknown): PersistedDoc<SaudeState> {
+  return migrateEnvelope(
+    input,
+    normalizeSaude,
+    (o) =>
+      'metrics' in o ||
+      'sleep' in o ||
+      'exams' in o ||
+      'heightCm' in o ||
+      'checkIns' in o ||
+      'medications' in o,
+  )
+}
+
+function mergeById<T extends { id: string }>(
+  local: T[],
+  remote: T[],
+  preferRemote: boolean,
+): T[] {
+  const map = new Map<string, T>()
+  const primary = preferRemote ? remote : local
+  const secondary = preferRemote ? local : remote
+  for (const item of secondary) map.set(item.id, item)
+  for (const item of primary) map.set(item.id, item)
+  return [...map.values()]
+}
+
+export function mergeSaudeSafe(
+  local: SaudeState,
+  remote: SaudeState,
+  preferRemote: boolean,
+): SaudeState {
+  const profile = preferRemote ? remote : local
+  return {
+    heightCm: profile.heightCm || local.heightCm || remote.heightCm,
+    sex: profile.sex ?? local.sex ?? remote.sex,
+    weightGoalKg:
+      profile.weightGoalKg || local.weightGoalKg || remote.weightGoalKg,
+    sleepReminderEnabled: profile.sleepReminderEnabled,
+    sleepReminderTime: profile.sleepReminderTime || '22:30',
+    weeklyGoals: defaultWeeklyGoals(profile.weeklyGoals),
+    metrics: mergeById(local.metrics, remote.metrics, preferRemote),
+    sleep: mergeById(local.sleep, remote.sleep, preferRemote),
+    exams: mergeById(local.exams, remote.exams, preferRemote),
+    checkIns: mergeById(local.checkIns, remote.checkIns, preferRemote),
+    medications: mergeById(local.medications, remote.medications, preferRemote),
+    photos: mergeById(local.photos, remote.photos, preferRemote).slice(0, 8),
+    lastConsult: preferRemote
+      ? remote.lastConsult ?? local.lastConsult
+      : local.lastConsult ?? remote.lastConsult,
+    proNotes: mergeById(local.proNotes, remote.proNotes, preferRemote).slice(
+      0,
+      40,
+    ),
+  }
+}
+
+function normalizeGameSession(raw: unknown): GameSession | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<GameSession>
+  if (typeof o.id !== 'string' || !o.id) return null
+  if (typeof o.gameId !== 'string' || !o.gameId) return null
+  return {
+    id: o.id,
+    gameId: o.gameId,
+    dateKey: o.dateKey || '',
+    durationSec: Math.max(0, Math.round(Number(o.durationSec) || 0)),
+    score:
+      o.score !== undefined && Number.isFinite(Number(o.score))
+        ? Math.round(Number(o.score))
+        : undefined,
+    level:
+      o.level !== undefined && Number.isFinite(Number(o.level))
+        ? Math.max(1, Math.round(Number(o.level)))
+        : undefined,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeGameBest(raw: unknown): GameBest | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<GameBest>
+  if (typeof o.gameId !== 'string' || !o.gameId) return null
+  return {
+    gameId: o.gameId,
+    bestScore: Math.max(0, Math.round(Number(o.bestScore) || 0)),
+    bestLevel: Math.max(0, Math.round(Number(o.bestLevel) || 0)),
+    plays: Math.max(0, Math.round(Number(o.plays) || 0)),
+    lastPlayedAt: o.lastPlayedAt || '',
+    lastDateKey: o.lastDateKey || '',
+  }
+}
+
+export function normalizeJogos(raw: unknown): JogosState {
+  const parsed =
+    raw && typeof raw === 'object' ? (raw as Partial<JogosState>) : {}
+  const base = emptyJogosState()
+  const dayLogRaw =
+    parsed.dayLog && typeof parsed.dayLog === 'object' ? parsed.dayLog : {}
+  const dayLog: Record<string, number> = {}
+  for (const [k, v] of Object.entries(dayLogRaw)) {
+    const n = Number(v)
+    if (n > 0) dayLog[k] = n
+  }
+  const sessions = asArray<unknown>(parsed.sessions)
+    .map(normalizeGameSession)
+    .filter((s): s is GameSession => Boolean(s))
+    .slice(0, 200)
+  const bestByGame = asArray<unknown>(parsed.bestByGame)
+    .map(normalizeGameBest)
+    .filter((b): b is GameBest => Boolean(b))
+  return {
+    dayLog,
+    sessions,
+    bestByGame,
+    totalMinutes: Math.max(
+      0,
+      Number(parsed.totalMinutes) || base.totalMinutes,
+    ),
+  }
+}
+
+export function migrateJogosDoc(input: unknown): PersistedDoc<JogosState> {
+  return migrateEnvelope(
+    input,
+    normalizeJogos,
+    (o) => 'sessions' in o || 'dayLog' in o || 'bestByGame' in o,
+  )
+}
+
+export function mergeJogosSafe(
+  local: JogosState,
+  remote: JogosState,
+  preferRemote: boolean,
+): JogosState {
+  const sessions = mergeById(
+    local.sessions,
+    remote.sessions,
+    preferRemote,
+  ).slice(0, 200)
+
+  const bestMap = new Map<string, GameBest>()
+  const bestPrimary = preferRemote ? remote.bestByGame : local.bestByGame
+  const bestSecondary = preferRemote ? local.bestByGame : remote.bestByGame
+  for (const b of bestSecondary) bestMap.set(b.gameId, b)
+  for (const b of bestPrimary) {
+    const prev = bestMap.get(b.gameId)
+    if (!prev) {
+      bestMap.set(b.gameId, b)
+      continue
+    }
+    bestMap.set(b.gameId, {
+      gameId: b.gameId,
+      bestScore: Math.max(prev.bestScore, b.bestScore),
+      bestLevel: Math.max(prev.bestLevel, b.bestLevel),
+      plays: Math.max(prev.plays, b.plays),
+      lastPlayedAt:
+        (prev.lastPlayedAt || '') >= (b.lastPlayedAt || '')
+          ? prev.lastPlayedAt || b.lastPlayedAt
+          : b.lastPlayedAt || prev.lastPlayedAt,
+      lastDateKey:
+        (prev.lastDateKey || '') >= (b.lastDateKey || '')
+          ? prev.lastDateKey || b.lastDateKey
+          : b.lastDateKey || prev.lastDateKey,
+    })
+  }
+
+  const dayLog: Record<string, number> = { ...(local.dayLog ?? {}) }
+  for (const [k, v] of Object.entries(remote.dayLog ?? {})) {
+    dayLog[k] = Math.max(dayLog[k] ?? 0, v)
+  }
+
+  return {
+    dayLog,
+    sessions,
+    bestByGame: [...bestMap.values()],
+    totalMinutes: Math.max(local.totalMinutes, remote.totalMinutes),
   }
 }

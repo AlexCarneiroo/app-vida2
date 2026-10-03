@@ -3,9 +3,77 @@ import type {
   FoodItem,
   FoodMacros,
   MealEntry,
+  MealPlan,
   MealSlot,
   NutricaoState,
+  PlanItem,
+  Weekday,
 } from '../types/nutricao'
+
+export const WEEKDAYS: Weekday[] = [1, 2, 3, 4, 5, 6, 0] // Seg → Dom
+export const WEEKDAY_LABELS: Record<Weekday, string> = {
+  0: 'Dom',
+  1: 'Seg',
+  2: 'Ter',
+  3: 'Qua',
+  4: 'Qui',
+  5: 'Sex',
+  6: 'Sáb',
+}
+
+export function emptyMealPlan(): MealPlan {
+  return {
+    days: {
+      0: [],
+      1: [],
+      2: [],
+      3: [],
+      4: [],
+      5: [],
+      6: [],
+    },
+  }
+}
+
+export function weekdayFromDateKey(key: string): Weekday {
+  const [y, m, d] = key.split('-').map(Number)
+  const date = new Date(y, (m || 1) - 1, d || 1)
+  return date.getDay() as Weekday
+}
+
+export function createPlanItem(
+  meal: MealSlot,
+  food: FoodItem,
+  grams: number,
+  note?: string,
+): PlanItem {
+  return {
+    id: uid('plan'),
+    meal,
+    food: { ...food, per100: { ...food.per100 } },
+    grams: Math.max(1, Math.round(grams)),
+    note: note?.trim() || undefined,
+  }
+}
+
+export function createCustomFood(input: {
+  name: string
+  brand?: string
+  per100: FoodMacros
+}): FoodItem {
+  return {
+    id: uid('custom'),
+    name: input.name.trim() || 'Alimento',
+    brand: input.brand?.trim() || undefined,
+    source: 'custom',
+    per100: {
+      kcal: Math.max(0, Math.round(input.per100.kcal)),
+      protein: Math.max(0, round1(input.per100.protein)),
+      carbs: Math.max(0, round1(input.per100.carbs)),
+      fat: Math.max(0, round1(input.per100.fat)),
+    },
+  }
+}
 
 export const MEAL_SLOTS: Array<{ id: MealSlot; label: string; hint: string }> = [
   { id: 'cafe', label: 'Café', hint: 'Manhã' },
@@ -40,32 +108,63 @@ function pantry(slug: string, name: string, per100: FoodMacros): FoodItem {
   return { id: `pantry_${slug}`, name, source: 'pantry', per100 }
 }
 
+/** Meta tipica ~2 L; garrafa padrão 600 ml. */
+export const DEFAULT_WATER_GOAL_ML = 2000
+export const DEFAULT_WATER_SERVING_ML = 600
+
 export const emptyNutricaoState = (): NutricaoState => ({
   kcalGoal: 2200,
   proteinGoal: 140,
   carbsGoal: 220,
   fatGoal: 70,
-  waterGoal: 8,
+  waterGoal: DEFAULT_WATER_GOAL_ML,
+  waterServingMl: DEFAULT_WATER_SERVING_ML,
   entries: [],
   favorites: [],
   waterByDay: {},
   dayLog: {},
+  mealPlan: emptyMealPlan(),
 })
+
+export function clampWaterServingMl(n: number) {
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.max(0, Math.min(2000, Math.round(n)))
+}
+
+export function clampWaterGoalMl(n: number) {
+  return Math.max(200, Math.min(8000, Math.round(n) || DEFAULT_WATER_GOAL_ML))
+}
+
+/** Quantas marcas cabem na meta (arredonda para cima, máx. 16). */
+export function waterServingSlots(goalMl: number, servingMl: number) {
+  if (servingMl <= 0) return 0
+  return Math.max(1, Math.min(16, Math.ceil(goalMl / servingMl)))
+}
 
 export function createEntry(
   date: string,
   meal: MealSlot,
   food: FoodItem,
   grams: number,
+  planItemId?: string,
 ): MealEntry {
   return {
     id: uid('meal'),
     dateKey: date,
     meal,
-    food,
+    food: { ...food, per100: { ...food.per100 } },
     grams: Math.max(1, Math.round(grams)),
     createdAt: new Date().toISOString(),
+    planItemId,
   }
+}
+
+export function planItemMacros(item: PlanItem): FoodMacros {
+  return scaleMacros(item.food.per100, item.grams)
+}
+
+export function dayPlanMacros(items: PlanItem[]): FoodMacros {
+  return sumMacros(items.map(planItemMacros))
 }
 
 export function round1(n: number) {
@@ -116,9 +215,26 @@ export function plateScore(today: FoodMacros, goals: Pick<NutricaoState, 'kcalGo
   return Math.round((kcalPts * 0.55 + proteinPts * 0.45) * 100)
 }
 
-export function plateLine(today: FoodMacros, goals: NutricaoState, water: number) {
+export function plateLine(
+  today: FoodMacros,
+  goals: NutricaoState,
+  water: number,
+  planPending = 0,
+) {
+  if (today.kcal <= 0 && planPending > 0) {
+    return planPending === 1
+      ? 'Tens 1 item do plano por marcar. Começa por aí.'
+      : `Tens ${planPending} itens do plano por marcar.`
+  }
   if (today.kcal <= 0) {
     return 'O prato ainda está vazio. Começa pela despensa ou procura na base mundial.'
+  }
+  if (
+    planPending > 0 &&
+    new Date().getHours() >= 11 &&
+    today.kcal < goals.kcalGoal * 0.4
+  ) {
+    return 'Almoço do plano ainda por marcar — um toque e conta no dia.'
   }
   if (today.protein < goals.proteinGoal * 0.55 && today.kcal < goals.kcalGoal * 0.85) {
     return 'Proteína ainda baixa — frango, ovo ou whey fecham o buraco.'
@@ -127,7 +243,7 @@ export function plateLine(today: FoodMacros, goals: NutricaoState, water: number
     return 'Já passou o alvo de calorias. Água e um passeio fecham o dia.'
   }
   if (water < Math.ceil(goals.waterGoal * 0.5)) {
-    return 'Comida no caminho. Falta hidratar — marca um copo.'
+    return 'Comida no caminho. Falta hidratar — marca a garrafa.'
   }
   if (today.kcal >= goals.kcalGoal * 0.75 && today.protein >= goals.proteinGoal * 0.75) {
     return 'Prato equilibrado. Assim o corpo agradece.'
