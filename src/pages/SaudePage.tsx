@@ -34,6 +34,7 @@ import { ProgressRing } from '../components/ui/ProgressRing'
 import {
   compressImageFile,
   EXAM_IDEAS,
+  sleepHoursBetween,
   VITAL_QUICK,
 } from '../data/saudeDefaults'
 import { useSaude } from '../hooks/useSaude'
@@ -179,11 +180,27 @@ export function SaudePage() {
     setView('body')
   }
 
+  function applySleepClock(bed: string, wake: string) {
+    setBedTime(bed)
+    setWakeTime(wake)
+    const hours = sleepHoursBetween(bed, wake)
+    if (hours != null) setSleepHours(String(hours))
+  }
+
   function openSleep() {
-    setSleepHours(tonightSleep ? String(tonightSleep.hours) : '7.5')
+    const bed = tonightSleep?.bedTime || state.sleepReminderTime || '22:30'
+    const wake = tonightSleep?.wakeTime || '06:30'
+    const computed = sleepHoursBetween(bed, wake)
+    setSleepHours(
+      computed != null
+        ? String(computed)
+        : tonightSleep
+          ? String(tonightSleep.hours)
+          : '7.5',
+    )
     setSleepQuality(tonightSleep?.quality ?? 3)
-    setBedTime(tonightSleep?.bedTime || state.sleepReminderTime || '22:30')
-    setWakeTime(tonightSleep?.wakeTime || '06:30')
+    setBedTime(bed)
+    setWakeTime(wake)
     setView('sleep')
   }
 
@@ -645,23 +662,14 @@ export function SaudePage() {
                 toast('Sono registado', 'ok')
               }}
             >
-              <label className="plan-field">
-                <span>Horas</span>
-                <input
-                  type="number"
-                  step={0.5}
-                  value={sleepHours}
-                  onChange={(e) => setSleepHours(e.target.value)}
-                  autoFocus
-                />
-              </label>
               <div className="saude-exam-grid">
                 <label className="plan-field">
                   <span>Deitar</span>
                   <input
                     type="time"
                     value={bedTime}
-                    onChange={(e) => setBedTime(e.target.value)}
+                    onChange={(e) => applySleepClock(e.target.value, wakeTime)}
+                    autoFocus
                   />
                 </label>
                 <label className="plan-field">
@@ -669,10 +677,25 @@ export function SaudePage() {
                   <input
                     type="time"
                     value={wakeTime}
-                    onChange={(e) => setWakeTime(e.target.value)}
+                    onChange={(e) => applySleepClock(bedTime, e.target.value)}
                   />
                 </label>
               </div>
+              <label className="plan-field">
+                <span>Horas</span>
+                <input
+                  type="number"
+                  min={0.5}
+                  max={16}
+                  step={0.1}
+                  value={sleepHours}
+                  onChange={(e) => setSleepHours(e.target.value)}
+                />
+              </label>
+              <p className="saude-imc-preview">
+                Calculado entre {bedTime} e {wakeTime}
+                {sleepHours ? ` · ${sleepHours} h` : ''}.
+              </p>
               <QualityField
                 label="Qualidade"
                 value={sleepQuality}

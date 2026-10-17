@@ -81,6 +81,8 @@ export type BillInput = {
   dayOfMonth: number
   category: FinanceCategory
   active?: boolean
+  renewalDate?: string | null
+  payDate?: string | null
 }
 
 export function clampBillDay(day: number) {
@@ -88,12 +90,47 @@ export function clampBillDay(day: number) {
   return Math.min(28, Math.max(1, n))
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+export function cleanBillDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return null
+  const [y, m, d] = value.split('-').map(Number)
+  const dt = new Date(y, m - 1, d)
+  if (
+    dt.getFullYear() !== y ||
+    dt.getMonth() !== m - 1 ||
+    dt.getDate() !== d
+  ) {
+    return null
+  }
+  return value
+}
+
+/** Próxima ocorrência do dia (1–28) a partir de hoje. */
+export function nextBillDate(day: number, now = new Date()) {
+  const d = clampBillDay(day)
+  const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  let due = new Date(cursor.getFullYear(), cursor.getMonth(), d)
+  if (due < cursor) {
+    due = new Date(cursor.getFullYear(), cursor.getMonth() + 1, d)
+  }
+  const y = due.getFullYear()
+  const m = String(due.getMonth() + 1).padStart(2, '0')
+  const dayStr = String(due.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dayStr}`
+}
+
 export function normalizeBill(raw: Partial<RecurringBill> & { id: string }): RecurringBill {
+  const payDate = cleanBillDate(raw.payDate)
+  const renewalDate = cleanBillDate(raw.renewalDate)
+  const dayFromPay = payDate ? Number(payDate.slice(8, 10)) : null
   return {
     id: raw.id,
     name: (raw.name || 'Conta').trim() || 'Conta',
     amount: Math.max(0.01, Number(raw.amount) || 0.01),
-    dayOfMonth: clampBillDay(raw.dayOfMonth ?? 1),
+    dayOfMonth: clampBillDay(dayFromPay ?? raw.dayOfMonth ?? 1),
+    renewalDate,
+    payDate,
     category: (raw.category || 'outros') as FinanceCategory,
     active: raw.active !== false,
     lastPaidMonth:

@@ -278,6 +278,8 @@ export function useFinancas() {
       name: input.name,
       amount: input.amount,
       dayOfMonth: clampBillDay(input.dayOfMonth),
+      renewalDate: input.renewalDate ?? null,
+      payDate: input.payDate ?? null,
       category: input.category,
       active: input.active !== false,
       lastPaidMonth: null,
@@ -326,10 +328,16 @@ export function useFinancas() {
       paid = bill
       const month = monthPrefix()
       const today = dateKey()
-      const day = String(bill.dayOfMonth).padStart(2, '0')
-      const renewKey = `${month}-${day}`
-      // Usa o dia da renovação se ainda não passou; senão hoje
-      const payDate = renewKey <= today ? today : renewKey
+      const cycle =
+        bill.payDate && /^\d{4}-\d{2}-\d{2}$/.test(bill.payDate)
+          ? bill.payDate.slice(0, 7)
+          : month
+      const paidMonth = cycle > month ? cycle : month
+      const dueKey =
+        bill.payDate && /^\d{4}-\d{2}-\d{2}$/.test(bill.payDate)
+          ? bill.payDate
+          : `${month}-${String(bill.dayOfMonth).padStart(2, '0')}`
+      const payDate = dueKey <= today ? dueKey : today
 
       const tx: Transaction = {
         id: makeId('tx'),
@@ -344,7 +352,7 @@ export function useFinancas() {
       return {
         ...prev,
         bills: (prev.bills ?? []).map((b) =>
-          b.id === id ? { ...b, lastPaidMonth: month } : b,
+          b.id === id ? { ...b, lastPaidMonth: paidMonth } : b,
         ),
         transactions: [tx, ...prev.transactions].slice(0, 500),
       }

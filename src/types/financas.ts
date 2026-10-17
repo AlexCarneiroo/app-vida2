@@ -35,8 +35,12 @@ export type RecurringBill = {
   id: string
   name: string
   amount: number
-  /** Dia do mês 1–28 */
+  /** Dia do mês 1–28, derivado da data de pagamento quando ela existe */
   dayOfMonth: number
+  /** YYYY-MM-DD da renovação da assinatura */
+  renewalDate: string | null
+  /** YYYY-MM-DD em que a conta deve ser paga */
+  payDate: string | null
   category: FinanceCategory
   active: boolean
   /** YYYY-MM do último pagamento registado */

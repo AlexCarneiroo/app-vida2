@@ -72,6 +72,51 @@ function loadTreinoDoc() {
   return loadTreinoPersisted(STORAGE_KEY, emptyState)
 }
 
+/** Não deixa um pull antigo reabrir sessão já concluída nem desfazer a troca. */
+function applyHydratedTreino(current: TreinoState, incoming: TreinoState): TreinoState {
+  const incomingActive = incoming.active
+  if (
+    incomingActive &&
+    current.history.some(
+      (w) => w.completedAt && w.startedAt === incomingActive.startedAt,
+    )
+  ) {
+    return {
+      ...incoming,
+      active: null,
+      history: current.history,
+      weekDone: { ...incoming.weekDone, ...current.weekDone },
+      plan: current.plan.length > 0 ? current.plan : incoming.plan,
+    }
+  }
+
+  const live = current.active
+  if (!live || !incomingActive || live.startedAt !== incomingActive.startedAt) {
+    return incoming
+  }
+
+  const changed =
+    Boolean(live.structureDirty) ||
+    live.exercises.length !== incomingActive.exercises.length ||
+    live.exercises.some((ex, i) => {
+      const other = incomingActive.exercises[i]
+      if (!other || ex.name !== other.name || ex.sets.length !== other.sets.length) {
+        return true
+      }
+      return ex.sets.some((s, j) => {
+        const prev = other.sets[j]
+        return (
+          !prev ||
+          s.done !== prev.done ||
+          s.reps !== prev.reps ||
+          s.weight !== prev.weight
+        )
+      })
+    })
+
+  return changed ? { ...incoming, active: live } : incoming
+}
+
 function templateToExercises(
   template: WorkoutTemplate,
   history: ActiveWorkout[],
@@ -266,29 +311,37 @@ export function useTreino() {
     let cancelled = false
     hydratedRef.current = false
     ;(async () => {
-      const localAtStart = loadTreinoDoc()
-      const next = await hydrateFromCloud(
-        'treino',
-        localAtStart,
-        (d) => d.history.length === 0 && !d.active && d.plan.length === 0,
-      )
+      const isEmpty = (d: TreinoState) =>
+        d.history.length === 0 && !d.active && d.plan.length === 0
+      // O efeito de persistência grava o estado local antes do pull terminar.
+      await Promise.resolve()
       if (cancelled) return
-      const latestLocal = loadTreinoDoc()
-      let finalDoc = next
-      if (
-        latestLocal.updatedAt > localAtStart.updatedAt &&
-        latestLocal.updatedAt >= next.updatedAt
-      ) {
-        finalDoc = await hydrateFromCloud(
-          'treino',
-          latestLocal,
-          (d) => d.history.length === 0 && !d.active && d.plan.length === 0,
-        )
+
+      let local = loadTreinoDoc()
+      let finalDoc = local
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const baseAt = local.updatedAt
+        finalDoc = await hydrateFromCloud('treino', local, isEmpty)
+        if (cancelled) return
+        // Espera o efeito que grava o treino concluído / a troca no localStorage.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        if (cancelled) return
+        const latest = loadTreinoDoc()
+        if (latest.updatedAt <= baseAt) break
+        local = latest
       }
       if (cancelled) return
-      setState(finalDoc.data)
-      updatedAtRef.current = finalDoc.updatedAt
-      touchPersisted(STORAGE_KEY, finalDoc.data, finalDoc.updatedAt)
+
+      const latest = loadTreinoDoc()
+      if (latest.updatedAt > local.updatedAt) {
+        finalDoc = { ...latest }
+      }
+
+      const applied = applyHydratedTreino(stateRef.current, finalDoc.data)
+      const appliedAt = Math.max(finalDoc.updatedAt, loadTreinoDoc().updatedAt)
+      setState(applied)
+      updatedAtRef.current = appliedAt
+      touchPersisted(STORAGE_KEY, applied, appliedAt)
       hydratedRef.current = true
     })()
     return () => {

@@ -6,10 +6,48 @@ function monthKeyFromDate(d = new Date()) {
   return `${y}-${m}`
 }
 
-/** Dias até o vencimento neste mês (negativo = já passou). */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** Data de pagamento. Sem data gravada, usa o dia do mês corrente. */
+export function billDueDate(bill: RecurringBill, now = new Date()) {
+  if (bill.payDate && ISO_DATE.test(bill.payDate)) {
+    const [y, m, d] = bill.payDate.split('-').map(Number)
+    const due = new Date(y, m - 1, d, 12, 0, 0, 0)
+    if (
+      due.getFullYear() === y &&
+      due.getMonth() === m - 1 &&
+      due.getDate() === d
+    ) {
+      return due
+    }
+  }
+  const day = Math.min(28, Math.max(1, bill.dayOfMonth || 1))
+  return new Date(now.getFullYear(), now.getMonth(), day, 12, 0, 0, 0)
+}
+
+function billCycleMonth(bill: RecurringBill, now: Date) {
+  if (bill.payDate && ISO_DATE.test(bill.payDate)) return bill.payDate.slice(0, 7)
+  return monthKeyFromDate(now)
+}
+
+function isBillPaid(bill: RecurringBill, now: Date) {
+  if (!bill.lastPaidMonth) return false
+  return bill.lastPaidMonth >= billCycleMonth(bill, now)
+}
+
+/** Dias até o vencimento (negativo = já passou). */
 export function daysUntilBill(bill: RecurringBill, now = new Date()) {
-  const today = now.getDate()
-  return bill.dayOfMonth - today
+  const due = billDueDate(bill, now)
+  const today = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    12,
+    0,
+    0,
+    0,
+  )
+  return Math.round((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
 }
 
 export function getBillStatus(
@@ -17,8 +55,7 @@ export function getBillStatus(
   now = new Date(),
 ): BillStatus {
   if (!bill.active) return 'ok'
-  const month = monthKeyFromDate(now)
-  if (bill.lastPaidMonth === month) return 'paid'
+  if (isBillPaid(bill, now)) return 'paid'
 
   const delta = daysUntilBill(bill, now)
   if (delta === 0) return 'today'
@@ -49,7 +86,10 @@ export function sortBills(bills: RecurringBill[], now = new Date()) {
     const sa = getBillStatus(a, now)
     const sb = getBillStatus(b, now)
     if (rank[sa] !== rank[sb]) return rank[sa] - rank[sb]
-    return a.dayOfMonth - b.dayOfMonth || a.name.localeCompare(b.name)
+    return (
+      daysUntilBill(a, now) - daysUntilBill(b, now) ||
+      a.name.localeCompare(b.name)
+    )
   })
 }
 
@@ -77,8 +117,7 @@ export function billsDueTodayOrTomorrow(
 ) {
   return bills.filter((b) => {
     if (!b.active) return false
-    const month = monthKeyFromDate(now)
-    if (b.lastPaidMonth === month) return false
+    if (isBillPaid(b, now)) return false
     const delta = daysUntilBill(b, now)
     return delta === 0 || delta === 1
   })
@@ -99,46 +138,24 @@ export function upcomingBillCalendar(
   horizonDays = 30,
   now = new Date(),
 ): BillCalendarItem[] {
-  const month = monthKeyFromDate(now)
-  const y = now.getFullYear()
-  const m = now.getMonth()
   const items: BillCalendarItem[] = []
 
   for (const bill of bills) {
     if (!bill.active) continue
-    const paid = bill.lastPaidMonth === month
-    const day = bill.dayOfMonth
-    const due = new Date(y, m, day)
-    due.setHours(12, 0, 0, 0)
-    const todayNoon = new Date(y, m, now.getDate(), 12, 0, 0, 0)
-    let daysUntil = Math.round(
-      (due.getTime() - todayNoon.getTime()) / (24 * 60 * 60 * 1000),
-    )
+    if (isBillPaid(bill, now)) continue
 
-    // Se já passou e não pago: atrasado (daysUntil negativo)
-    // Se pago e já passou: pula
-    if (paid && daysUntil <= 0) continue
-    if (paid && daysUntil > horizonDays) continue
-
-    // Se ainda não pago e o dia já passou: incluir como atrasado
-    if (!paid && daysUntil < 0) {
-      items.push({
-        bill,
-        dateKey: `${month}-${String(day).padStart(2, '0')}`,
-        daysUntil,
-        status: 'overdue',
-      })
-      continue
-    }
-
+    const due = billDueDate(bill, now)
+    const daysUntil = daysUntilBill(bill, now)
     if (daysUntil > horizonDays) continue
-    if (paid) continue
 
+    const y = due.getFullYear()
+    const m = String(due.getMonth() + 1).padStart(2, '0')
+    const d = String(due.getDate()).padStart(2, '0')
     items.push({
       bill,
-      dateKey: `${month}-${String(day).padStart(2, '0')}`,
+      dateKey: `${y}-${m}-${d}`,
       daysUntil,
-      status: getBillStatus(bill, now),
+      status: daysUntil < 0 ? 'overdue' : getBillStatus(bill, now),
     })
   }
 

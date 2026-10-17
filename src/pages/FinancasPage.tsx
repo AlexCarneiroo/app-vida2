@@ -31,8 +31,8 @@ import {
   BILL_IDEAS,
   CATEGORY_LABELS,
   categoriesForType,
-  clampBillDay,
   EXPENSE_CATEGORIES,
+  nextBillDate,
 } from '../data/financasDefaults'
 import { useBusyAction } from '../hooks/useBusyAction'
 import { useFinancas } from '../hooks/useFinancas'
@@ -139,7 +139,8 @@ export function FinancasPage() {
   const [editingBillId, setEditingBillId] = useState<string | null>(null)
   const [billName, setBillName] = useState('')
   const [billAmount, setBillAmount] = useState('')
-  const [billDay, setBillDay] = useState('5')
+  const [billRenewal, setBillRenewal] = useState(() => dateKey())
+  const [billPay, setBillPay] = useState(() => dateKey())
   const [billCategory, setBillCategory] =
     useState<FinanceCategory>('lazer')
   const [billActive, setBillActive] = useState(true)
@@ -211,20 +212,24 @@ export function FinancasPage() {
   }
 
   function resetBillForm() {
+    const today = dateKey()
     setEditingBillId(null)
     setBillName('')
     setBillAmount('')
-    setBillDay('5')
+    setBillRenewal(today)
+    setBillPay(today)
     setBillCategory('lazer')
     setBillActive(true)
   }
 
   function openBillForm(bill?: RecurringBill) {
     if (bill) {
+      const fallback = nextBillDate(bill.dayOfMonth)
       setEditingBillId(bill.id)
       setBillName(bill.name)
       setBillAmount(String(bill.amount).replace('.', ','))
-      setBillDay(String(bill.dayOfMonth))
+      setBillRenewal(bill.renewalDate || fallback)
+      setBillPay(bill.payDate || bill.renewalDate || fallback)
       setBillCategory(bill.category)
       setBillActive(bill.active)
     } else {
@@ -234,10 +239,12 @@ export function FinancasPage() {
   }
 
   function applyBillIdea(idea: (typeof BILL_IDEAS)[number]) {
+    const next = nextBillDate(idea.dayOfMonth)
     setEditingBillId(null)
     setBillName(idea.name)
     setBillAmount(String(idea.amount).replace('.', ','))
-    setBillDay(String(idea.dayOfMonth))
+    setBillRenewal(next)
+    setBillPay(next)
     setBillCategory(idea.category)
     setBillActive(true)
     setView('bill')
@@ -288,12 +295,14 @@ export function FinancasPage() {
   function handleSaveBill(e: FormEvent) {
     e.preventDefault()
     const value = parseBRLInput(billAmount)
-    if (!billName.trim() || !value) return
+    if (!billName.trim() || !value || !billRenewal || !billPay) return
     void runSaveBill(() => {
       const payload = {
         name: billName,
         amount: value,
-        dayOfMonth: clampBillDay(Number(billDay) || 1),
+        dayOfMonth: Number(billPay.slice(8, 10)) || 1,
+        renewalDate: billRenewal,
+        payDate: billPay,
         category: billCategory,
         active: billActive,
       }
@@ -422,7 +431,7 @@ export function FinancasPage() {
         : view === 'bill'
           ? {
               title: editingBillId ? 'Editar assinatura' : 'Nova assinatura',
-              sub: 'Dia de renovação, valor e categoria — avisamos se atrasar.',
+              sub: 'Data da renovação, data para pagar e valor — avisamos se atrasar.',
             }
           : view === 'budget'
             ? {
@@ -721,8 +730,7 @@ export function FinancasPage() {
         <div className="surface finance-empty finance-empty--compact">
           <RefreshCw size={22} />
           <p>
-            Netflix, academia, luz… regista o dia de renovação e vê o que está
-            atrasado.
+            Netflix, academia, luz… define a renovação e a data para pagar.
           </p>
         </div>
       ) : (
@@ -741,7 +749,12 @@ export function FinancasPage() {
                   <div className="finance-bill__info">
                     <strong>{bill.name}</strong>
                     <span>
-                      Renova dia {bill.dayOfMonth}
+                      {bill.renewalDate
+                        ? `Renova ${formatDateBR(bill.renewalDate)}`
+                        : `Renova dia ${bill.dayOfMonth}`}
+                      {bill.payDate
+                        ? ` · Pagar ${formatDateBR(bill.payDate)}`
+                        : ''}
                       {' · '}
                       {CATEGORY_LABELS[bill.category]}
                       {!bill.active ? ' · Pausada' : ''}
@@ -1107,14 +1120,28 @@ export function FinancasPage() {
                     disabled={savingBill}
                   />
                 </label>
-                <label className="plan-field">
-                  <span>Dia do mês</span>
+                <label className="plan-field plan-field--grow">
+                  <span>Data da renovação</span>
                   <input
-                    type="number"
-                    min={1}
-                    max={28}
-                    value={billDay}
-                    onChange={(e) => setBillDay(e.target.value)}
+                    type="date"
+                    value={billRenewal}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      if (/^\d{4}-\d{2}-\d{2}$/.test(next)) setBillRenewal(next)
+                    }}
+                    required
+                    disabled={savingBill}
+                  />
+                </label>
+                <label className="plan-field plan-field--grow">
+                  <span>Data para pagar</span>
+                  <input
+                    type="date"
+                    value={billPay}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      if (/^\d{4}-\d{2}-\d{2}$/.test(next)) setBillPay(next)
+                    }}
                     required
                     disabled={savingBill}
                   />

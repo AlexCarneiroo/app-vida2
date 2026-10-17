@@ -1,8 +1,8 @@
 import {
   doc,
   getDoc,
+  runTransaction,
   serverTimestamp,
-  setDoc,
   type Firestore,
 } from 'firebase/firestore'
 import { onAuthStateChanged, type Auth, type User } from 'firebase/auth'
@@ -62,7 +62,9 @@ const META_KEY = 'vida.sync.meta.v1'
 const DEVICE_KEY = 'vida.deviceId'
 
 const timers: Partial<Record<CloudCollection, number>> = {}
-const pendingAt: Partial<Record<CloudCollection, number>> = {}
+const pendingSave: Partial<
+  Record<CloudCollection, { data: unknown; updatedAt: number }>
+> = {}
 let authPromise: Promise<User | null> | null = null
 let currentUser: User | null = null
 
@@ -221,32 +223,54 @@ export async function pushCloudDoc<T>(
   const ref = cloudRef(collection, user.uid)
   if (!ref) return 'error'
 
+  const newerPending = pendingSave[collection]
+  if (newerPending && newerPending.updatedAt > updatedAt) return 'skipped'
+
   try {
     emitStatus('syncing')
-    const snap = await getDoc(ref)
-    if (snap.exists()) {
-      const remote = snap.data() as { updatedAt?: number }
-      if (
-        typeof remote.updatedAt === 'number' &&
-        remote.updatedAt > updatedAt
-      ) {
-        // nuvem mais nova — não sobrescrever
-        writeMeta({
-          [`${collection}UpdatedAt`]: remote.updatedAt,
-        } as Partial<SyncMeta>)
-        emitStatus('saved')
-        return 'skipped'
+    const fb = requireFirebase()
+    if (!fb) return 'error'
+
+    let skippedRemoteAt: number | null = null
+    let stale = false
+    await runTransaction(fb.db, async (tx) => {
+      skippedRemoteAt = null
+      stale = false
+      const snap = await tx.get(ref)
+      const pending = pendingSave[collection]
+      if (pending && pending.updatedAt > updatedAt) {
+        stale = true
+        return
       }
+      if (snap.exists()) {
+        const remoteAt = (snap.data() as { updatedAt?: number }).updatedAt
+        if (typeof remoteAt === 'number' && remoteAt > updatedAt) {
+          skippedRemoteAt = remoteAt
+          return
+        }
+      }
+      tx.set(ref, {
+        schemaVersion: SCHEMA_VERSION,
+        data,
+        updatedAt,
+        deviceId: getDeviceId(),
+        savedAt: serverTimestamp(),
+      })
+    })
+
+    if (stale) {
+      emitStatus('saved')
+      return 'skipped'
     }
 
-    const payload = {
-      schemaVersion: SCHEMA_VERSION,
-      data,
-      updatedAt,
-      deviceId: getDeviceId(),
-      savedAt: serverTimestamp(),
+    if (skippedRemoteAt != null) {
+      writeMeta({
+        [`${collection}UpdatedAt`]: skippedRemoteAt,
+      } as Partial<SyncMeta>)
+      emitStatus('saved')
+      return 'skipped'
     }
-    await setDoc(ref, payload, { merge: false })
+
     writeMeta({
       [`${collection}UpdatedAt`]: updatedAt,
     } as Partial<SyncMeta>)
@@ -274,12 +298,13 @@ export function scheduleCloudSave<T>(
   writeMeta({
     [`${collection}UpdatedAt`]: updatedAt,
   } as Partial<SyncMeta>)
-  pendingAt[collection] = updatedAt
+  pendingSave[collection] = { data, updatedAt }
 
   window.clearTimeout(timers[collection])
   timers[collection] = window.setTimeout(() => {
-    const at = pendingAt[collection] ?? updatedAt
-    void pushCloudDoc(collection, data, at)
+    const pending = pendingSave[collection]
+    if (!pending) return
+    void pushCloudDoc(collection, pending.data, pending.updatedAt)
   }, debounceMs)
 }
 

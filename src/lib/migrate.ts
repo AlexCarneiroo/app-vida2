@@ -90,7 +90,7 @@ export function normalizeTreino(raw: unknown): TreinoState {
     ...w,
     exercises: asArray<Exercise>(w.exercises).map((ex) => ensureSourceId(ex)),
   }))
-  const active = parsed.active
+  const activeRaw = parsed.active
     ? {
         ...parsed.active,
         exercises: asArray<Exercise>(parsed.active.exercises).map((ex) =>
@@ -98,6 +98,8 @@ export function normalizeTreino(raw: unknown): TreinoState {
         ),
       }
     : null
+  // Sessão já concluída não pode reaparecer como treino em andamento.
+  const active = activeRaw && sessionWasCompleted(activeRaw, history) ? null : activeRaw
   const plan = asArray<WorkoutTemplate>(parsed.plan)
   const savedPlans = asArray<SavedCustomPlan>(parsed.savedPlans)
     .filter((p) => p && typeof p.id === 'string' && Array.isArray(p.templates))
@@ -352,6 +354,26 @@ export function mergeFinancasSafe(
   }
 }
 
+/** A sessão aberta é a mesma que já entrou no histórico como concluída. */
+function sessionWasCompleted(
+  active: ActiveWorkout,
+  history: ActiveWorkout[],
+): boolean {
+  if (!active.startedAt) return false
+  return history.some(
+    (w) => Boolean(w.completedAt) && w.startedAt === active.startedAt,
+  )
+}
+
+function resolveActiveWorkout(
+  primary: TreinoState,
+  history: ActiveWorkout[],
+): ActiveWorkout | null {
+  const newer = primary.active ?? null
+  if (!newer || sessionWasCompleted(newer, history)) return null
+  return newer
+}
+
 export function mergeTreinoSafe(
   local: TreinoState,
   remote: TreinoState,
@@ -369,6 +391,9 @@ export function mergeTreinoSafe(
     const key = w.completedAt || `${w.dateKey}_${w.templateId}_${w.startedAt}`
     histMap.set(key, w)
   }
+  const history = [...histMap.values()].sort((a, b) =>
+    (b.completedAt || b.startedAt).localeCompare(a.completedAt || a.startedAt),
+  )
 
   const weekDone = { ...secondary.weekDone, ...primary.weekDone }
 
@@ -376,10 +401,8 @@ export function mergeTreinoSafe(
     ...secondary,
     ...primary,
     plan: primary.plan?.length ? primary.plan : secondary.plan,
-    active: primary.active ?? secondary.active,
-    history: [...histMap.values()].sort((a, b) =>
-      (b.completedAt || b.startedAt).localeCompare(a.completedAt || a.startedAt),
-    ),
+    active: resolveActiveWorkout(primary, history),
+    history,
     weekDone,
     settings: { ...secondary.settings, ...primary.settings },
     savedPlans: (() => {

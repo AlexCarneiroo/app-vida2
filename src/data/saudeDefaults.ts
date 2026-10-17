@@ -87,6 +87,25 @@ export function createMetric(input: {
   }
 }
 
+/** Horas entre deitar e acordar. Se acordar for no dia seguinte, passa da meia-noite. */
+export function sleepHoursBetween(bedTime: string, wakeTime: string): number | null {
+  const toMinutes = (value: string) => {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+    if (!match) return null
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+    if (hours > 23 || minutes > 59) return null
+    return hours * 60 + minutes
+  }
+  const start = toMinutes(bedTime)
+  const end = toMinutes(wakeTime)
+  if (start == null || end == null || start === end) return null
+  const diff = end > start ? end - start : end + 24 * 60 - start
+  const hours = Math.round((diff / 60) * 10) / 10
+  if (hours <= 0 || hours > 16) return null
+  return hours
+}
+
 export function createSleep(input: {
   hours: number
   quality: SleepQuality

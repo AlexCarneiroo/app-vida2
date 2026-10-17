@@ -602,7 +602,7 @@ export function HabitosPage() {
                   </button>
                 </div>
                 {form.goalKind === 'count' && (
-                  <label className="plan-field plan-field--short">
+                  <label className="plan-field">
                     <span>Quantas vezes por dia?</span>
                     <input
                       type="number"
@@ -974,12 +974,6 @@ export function HabitosPage() {
               </div>
             </div>
 
-            <ActivityHeatmap
-              log={dayLog}
-              range="month"
-              title="Hábitos no mês"
-            />
-
             <div className="section-label">
               <h2>Hoje</h2>
               <span>
@@ -1191,6 +1185,12 @@ export function HabitosPage() {
                 </div>
               </>
             )}
+
+            <ActivityHeatmap
+              log={dayLog}
+              range="month"
+              title="Hábitos no mês"
+            />
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,8 +1,6 @@
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import {
   Activity,
-  ArrowUpRight,
   Check,
   Dumbbell,
   Gamepad2,
@@ -13,11 +11,7 @@ import {
   UtensilsCrossed,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import {
-  PageTransition,
-  staggerContainer,
-  staggerItem,
-} from '../components/ui/PageTransition'
+import { PageTransition } from '../components/ui/PageTransition'
 import { ProgressRing } from '../components/ui/ProgressRing'
 import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { useAuth } from '../hooks/useAuth'
@@ -28,11 +22,8 @@ import { useRotina } from '../hooks/useRotina'
 import { useJogos } from '../hooks/useJogos'
 import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
-import { coachLine, useMotivation } from '../hooks/useMotivation'
-import {
-  buildInstructorHomeNote,
-  InstructorHomeNote,
-} from '../components/treino/InstructorHomeNote'
+import { coachLine } from '../hooks/useMotivation'
+import { buildInstructorHomeNote } from '../components/treino/InstructorHomeNote'
 import {
   financasDayLog,
   mergeDayLogs,
@@ -63,7 +54,6 @@ export function HomePage() {
     doneCount,
     coveredCount,
     total: habitsTotal,
-    allTotal: habitsAllTotal,
     toggleHabit,
     dayLog: habitsLog,
   } = useHabitos()
@@ -86,7 +76,6 @@ export function HomePage() {
   const {
     score: saudeScore,
     signals: saudeSignals,
-    weeklyInsights,
     dueExams,
     sleepDebt,
     poorSleepForTraining,
@@ -166,30 +155,12 @@ export function HomePage() {
         ? 'Hoje'
         : '—'
 
-  const treinoDesc = state.active
-    ? `Em andamento · ${stats.doneSets}/${stats.totalSets} séries`
-    : isTodayDone
-      ? 'Sessão concluída hoje'
-      : todayTemplate
-        ? `${todayTemplate.name} · ~${todayTemplate.estimatedMin} min`
-        : 'Nenhum treino no plano de hoje'
-
   const financasMeta =
     monthTransactions.length > 0
       ? formatBRL(financeStats.balance)
       : goals.length > 0
         ? `${goals.length} meta${goals.length > 1 ? 's' : ''}`
         : '—'
-
-  const financasDesc =
-    monthTransactions.length > 0
-      ? `${monthLabel} · ${monthTransactions.length} movimento${monthTransactions.length === 1 ? '' : 's'} · saldo ${formatBRL(financeStats.balance)}`
-      : goals.length > 0
-        ? goals
-            .slice(0, 2)
-            .map((g) => g.name)
-            .join(' · ')
-        : 'Sem movimentos neste mês'
 
   const goalsTarget = goals.reduce((a, g) => a + g.target, 0)
   const goalsSaved = goals.reduce((a, g) => a + g.saved, 0)
@@ -212,7 +183,13 @@ export function HomePage() {
       {
         to: '/treino',
         title: 'Treino',
-        desc: treinoDesc,
+        desc: state.active
+          ? 'Sessão em andamento'
+          : isTodayDone
+            ? 'Concluído hoje'
+            : todayTemplate
+              ? todayTemplate.name
+              : 'Sem plano hoje',
         meta: treinoMeta,
         progress: stats.homeProgress,
         icon: Dumbbell,
@@ -223,7 +200,10 @@ export function HomePage() {
       {
         to: '/financas',
         title: 'Finanças',
-        desc: financasDesc,
+        desc:
+          monthTransactions.length > 0
+            ? `${monthLabel}`
+            : 'Sem movimentos',
         meta: financasMeta,
         progress: financasProgress,
         icon: PiggyBank,
@@ -234,10 +214,7 @@ export function HomePage() {
       {
         to: '/habitos',
         title: 'Hábitos',
-        desc:
-          habitsTotal > 0
-            ? `${doneCount} de ${habitsTotal} feitos hoje`
-            : 'Nenhum hábito criado',
+        desc: habitsTotal > 0 ? `${doneCount} de ${habitsTotal} hoje` : 'Nenhum criado',
         meta: habitsTotal > 0 ? `${doneCount}/${habitsTotal}` : '—',
         progress: habitsTotal > 0 ? Math.round((doneCount / habitsTotal) * 100) : 0,
         icon: Sparkles,
@@ -248,10 +225,7 @@ export function HomePage() {
       {
         to: '/rotina',
         title: 'Rotina',
-        desc:
-          rotinaTotal > 0
-            ? `${rotinaDone} de ${rotinaTotal} blocos feitos`
-            : 'Nenhum bloco na rotina',
+        desc: rotinaTotal > 0 ? `${rotinaDone} de ${rotinaTotal} blocos` : 'Nenhum bloco',
         meta: rotinaTotal > 0 ? `${rotinaDone}/${rotinaTotal}` : '—',
         progress:
           rotinaTotal > 0
@@ -267,8 +241,8 @@ export function HomePage() {
         title: 'Nutrição',
         desc:
           todayMacros.kcal > 0
-            ? `${todayMacros.kcal} kcal · ${Math.round(todayMacros.protein)}g proteína`
-            : 'Diário vazio — abre o prato',
+            ? `${todayMacros.kcal} kcal`
+            : 'Diário vazio',
         meta: todayMacros.kcal > 0 ? `${todayMacros.kcal}` : '—',
         progress: Math.min(100, Math.round((todayMacros.kcal / nutriGoal) * 100)),
         icon: UtensilsCrossed,
@@ -279,9 +253,7 @@ export function HomePage() {
       {
         to: '/saude',
         title: 'Saúde',
-        desc: saudeSignals.waterOk
-          ? `Vitalidade ${saudeScore} · água ok`
-          : `Vitalidade ${saudeScore} · hidratação`,
+        desc: saudeSignals.waterOk ? 'Hidratação em dia' : 'Hidratação',
         meta: `${saudeScore}`,
         progress: saudeScore,
         icon: Activity,
@@ -294,8 +266,8 @@ export function HomePage() {
         title: 'Jogos',
         desc:
           jogosPlaysToday > 0
-            ? `${jogosPlaysToday} sessão${jogosPlaysToday === 1 ? '' : 'ões'} hoje · sequência ${jogosStreak}d`
-            : 'Treino mental — memória, fala e foco',
+            ? `${jogosPlaysToday} hoje · ${jogosStreak}d`
+            : 'Memória, fala e foco',
         meta: jogosPlaysToday > 0 ? `${jogosPlaysToday}` : '—',
         progress:
           jogosPlaysToday > 0 ? Math.min(100, jogosPlaysToday * 34) : 0,
@@ -306,10 +278,13 @@ export function HomePage() {
       },
     ],
     [
-      treinoDesc,
       treinoMeta,
+      isTodayDone,
+      todayTemplate,
+      state.active,
+      monthLabel,
+      monthTransactions.length,
       stats.homeProgress,
-      financasDesc,
       financasMeta,
       financasProgress,
       habitsTotal,
@@ -326,7 +301,6 @@ export function HomePage() {
     ],
   )
 
-  const quote = useMotivation()
   const heroLine = coachLine({
     hour: now.getHours(),
     firstName,
@@ -379,8 +353,6 @@ export function HomePage() {
   ])
 
   const saudeNote = useMemo(() => {
-    const warn = weeklyInsights.find((i) => i.tone === 'warn')
-    if (warn) return warn.body
     if (dueExams.length > 0) {
       return dueExams.length === 1
         ? `Exame a refazer: ${dueExams[0].name}.`
@@ -402,7 +374,6 @@ export function HomePage() {
     }
     return null
   }, [
-    weeklyInsights,
     dueExams,
     sleepDebt,
     poorSleepForTraining,
@@ -443,14 +414,6 @@ export function HomePage() {
     return null
   }, [billsOverdue, billsDueSoonAlert])
 
-  const primaryTreinoLabel = state.active
-    ? 'Continuar treino'
-    : isTodayDone
-      ? 'Ver treino'
-      : todayTemplate
-        ? 'Treinar hoje'
-        : 'Montar treino'
-
   const todayItems = useMemo(() => {
     const list: Array<{
       id: string
@@ -488,176 +451,68 @@ export function HomePage() {
     return list.slice(0, 8)
   }, [dueToday, blocks, toggleHabit, toggleBlock])
 
+  const notices = [
+    billsNote
+      ? { id: 'bills', text: billsNote, to: '/financas', cta: 'Ver contas' }
+      : null,
+    saudeNote
+      ? { id: 'saude', text: saudeNote, to: '/saude', cta: 'Ver saúde' }
+      : null,
+    missedWorkouts.length > 0 && instructorNote
+      ? {
+          id: 'missed',
+          text: instructorNote.text,
+          to: '/treino',
+          cta: instructorNote.cta ?? 'Ver treino',
+        }
+      : null,
+  ]
+    .filter((item): item is { id: string; text: string; to: string; cta: string } =>
+      Boolean(item),
+    )
+    .slice(0, 2)
+
+  const lead =
+    dayTotal === 0
+      ? 'Escolhe uma área para registar o primeiro passo de hoje.'
+      : heroLine
+
+  const dateLabel = todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)
+
   return (
     <PageTransition>
-      <motion.section
-        className={`home-hero${dayTotal === 0 ? ' home-hero--empty' : ''}`}
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <div className="home-hero__glow" aria-hidden="true" />
-        <div className="home-hero__glow home-hero__glow--2" aria-hidden="true" />
-
-        <div className="home-hero__top">
-          <div className="home-hero__intro">
-            <h1 className="home-hero__greet">
-              {greet}
-              {firstName ? (
-                <>
-                  , <em>{firstName}</em>
-                </>
-              ) : null}
-            </h1>
-            <p className="home-hero__date">{todayLabel}</p>
-          </div>
-          <div className="home-hero__meter" aria-label={`Progresso do dia ${dayProgress}%`}>
-            <ProgressRing
-              value={dayProgress}
-              size={76}
-              stroke={6}
-              color="var(--jade)"
-            />
-          </div>
+      <header className="home-head">
+        <div className="home-head__intro">
+          <p className="home-head__date">{dateLabel}</p>
+          <h1 className="home-head__greet">
+            {greet}
+            {firstName ? (
+              <>
+                , <em>{firstName}</em>
+              </>
+            ) : null}
+          </h1>
         </div>
+        <div
+          className="home-head__meter"
+          aria-label={`Progresso do dia ${dayProgress}%`}
+        >
+          <ProgressRing value={dayProgress} size={58} stroke={5} color="var(--jade)" />
+        </div>
+      </header>
 
-        {dayTotal > 0 && (
-          <span className="home-hero__chip">
-            {dayProgress >= 100 ? 'Completo' : 'Em curso'}
-          </span>
-        )}
-        <p className="home-hero__line">{heroLine}</p>
-        {instructorNote ? (
-          <InstructorHomeNote data={instructorNote} />
-        ) : quote ? (
-          <blockquote className="home-hero__quote">
-            <p>“{quote.text}”</p>
-            <cite>{quote.author}</cite>
-          </blockquote>
-        ) : null}
-        {instructorNote && quote && (
-          <blockquote className="home-hero__quote home-hero__quote--soft">
-            <p>“{quote.text}”</p>
-            <cite>{quote.author}</cite>
-          </blockquote>
-        )}
-        {billsNote && (
-          <aside
-            className="home-hero__quote home-bills-note"
-            aria-label="Contas atrasadas"
-          >
-            <p>{billsNote}</p>
-            <cite>
-              <span>Finanças</span>
-              <Link to="/financas" className="home-bills-note__cta">
-                Ver contas
-              </Link>
-            </cite>
-          </aside>
-        )}
-        {saudeNote && (
-          <aside
-            className="home-hero__quote home-saude-note"
-            aria-label="Alerta de saúde"
-          >
-            <p>{saudeNote}</p>
-            <cite>
-              <span>Saúde</span>
-              <Link to="/saude" className="home-saude-note__cta">
-                Ver saúde
-              </Link>
-            </cite>
-          </aside>
-        )}
+      <p className="home-lead">{lead}</p>
 
-        {dayTotal === 0 ? (
-          <div className="home-hero__starts">
-            <Link to="/treino" className="home-start">
-              <span className="home-start__icon" style={{ color: 'var(--treino)' }}>
-                <Dumbbell size={18} />
-              </span>
-              <span>
-                <strong>Treino</strong>
-                <em>Definir plano</em>
-              </span>
-              <ArrowUpRight size={16} />
+      {notices.length > 0 && (
+        <div className="home-notices">
+          {notices.map((note) => (
+            <Link key={note.id} to={note.to} className="home-notice">
+              <p>{note.text}</p>
+              <span>{note.cta}</span>
             </Link>
-            <Link to="/habitos" className="home-start">
-              <span className="home-start__icon" style={{ color: 'var(--habitos)' }}>
-                <Sparkles size={18} />
-              </span>
-              <span>
-                <strong>Hábitos</strong>
-                <em>Criar o primeiro</em>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-            <Link to="/financas" className="home-start">
-              <span className="home-start__icon" style={{ color: 'var(--financas)' }}>
-                <PiggyBank size={18} />
-              </span>
-              <span>
-                <strong>Finanças</strong>
-                <em>Registar saldo</em>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-            <Link to="/rotina" className="home-start">
-              <span className="home-start__icon" style={{ color: 'var(--rotina)' }}>
-                <Repeat size={18} />
-              </span>
-              <span>
-                <strong>Rotina</strong>
-                <em>Blocos do dia</em>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-            <Link to="/nutricao" className="home-start">
-              <span className="home-start__icon" style={{ color: 'var(--nutricao)' }}>
-                <UtensilsCrossed size={18} />
-              </span>
-              <span>
-                <strong>Nutrição</strong>
-                <em>Registar o prato</em>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-            <Link to="/saude" className="home-start">
-              <span className="home-start__icon" style={{ color: 'var(--saude)' }}>
-                <Activity size={18} />
-              </span>
-              <span>
-                <strong>Saúde</strong>
-                <em>Vitalidade e exames</em>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-            <Link to="/jogos" className="home-start">
-              <span className="home-start__icon" style={{ color: 'var(--jogos)' }}>
-                <Gamepad2 size={18} />
-              </span>
-              <span>
-                <strong>Jogos</strong>
-                <em>Treino mental</em>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-          </div>
-        ) : (
-          <div className="home-hero__actions">
-            <Link to="/treino" className="btn btn--primary">
-              {primaryTreinoLabel}
-              <ArrowUpRight size={18} />
-            </Link>
-            <Link
-              to={habitsAllTotal === 0 ? '/habitos' : '/rotina'}
-              className="btn btn--ghost"
-            >
-              {habitsAllTotal === 0 ? 'Criar hábitos' : 'Ver rotina'}
-            </Link>
-          </div>
-        )}
-      </motion.section>
+          ))}
+        </div>
+      )}
 
       {(todayTemplate || state.active) && (
         <Link to="/treino" className="surface surface--interactive home-treino-card">
@@ -703,126 +558,48 @@ export function HomePage() {
       )}
 
       <div className="section-label">
-        <h2>Seus pilares</h2>
-        <span>Toque para entrar</span>
+        <h2>Áreas</h2>
       </div>
 
-      <motion.div
-        className="grid-modules"
-        variants={staggerContainer}
-        initial="hidden"
-        animate="show"
-      >
+      <div className="home-areas">
         {modules.map((mod) => {
           const Icon = mod.icon
+          const meta = mod.meta === '—' ? '' : mod.meta
           return (
-            <motion.div key={mod.to} variants={staggerItem}>
-              <Link
-                to={mod.to}
-                className="surface surface--interactive module-card"
-                style={
-                  {
-                    '--bar': mod.bar,
-                    '--icon-bg': mod.iconBg,
-                    '--icon-fg': mod.iconFg,
-                  } as CSSProperties
-                }
-              >
-                <div className="module-card__top">
-                  <span className="module-card__icon">
-                    <Icon size={22} strokeWidth={2.1} />
-                  </span>
-                  <span className="module-card__meta">{mod.meta}</span>
-                </div>
-                <h3 className="module-card__title">{mod.title}</h3>
-                <p className="module-card__desc">{mod.desc}</p>
-                <div className="module-card__bar" aria-hidden="true">
-                  <motion.span
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: Math.max(0, Math.min(1, mod.progress / 100)) }}
-                    transition={{
-                      delay: 0.35,
-                      duration: 0.8,
-                      ease: [0.22, 1, 0.36, 1],
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </Link>
-            </motion.div>
+            <Link
+              key={mod.to}
+              to={mod.to}
+              className="surface surface--interactive home-area"
+              style={
+                {
+                  '--icon-bg': mod.iconBg,
+                  '--icon-fg': mod.iconFg,
+                } as CSSProperties
+              }
+            >
+              <span className="home-area__icon">
+                <Icon size={18} strokeWidth={2.1} />
+              </span>
+              <span className="home-area__copy">
+                <strong>{mod.title}</strong>
+                <em>{mod.desc}</em>
+              </span>
+              {meta ? <span className="home-area__meta">{meta}</span> : null}
+            </Link>
           )
         })}
-      </motion.div>
-
-      <div className="section-label">
-        <h2>Hoje</h2>
-        <span>
-          {dayTotal > 0
-            ? `${Math.round(dayDone)}/${dayTotal}`
-            : 'Vazio'}
-        </span>
       </div>
 
-      <motion.div
-        className="stats-row"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <div className="surface ring-panel">
-          <ProgressRing value={dayProgress} color="var(--habitos)" />
-          <div>
-            <p className="page-kicker">Progresso do dia</p>
-            <strong
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '1.35rem',
-                letterSpacing: '-0.03em',
-              }}
-            >
-              {dayTotal === 0
-                ? 'Sem itens ainda'
-                : dayProgress >= 100
-                  ? 'Dia completo'
-                  : `${dayProgress}% concluído`}
-            </strong>
-            <p
-              style={{
-                color: 'var(--ink-muted)',
-                marginTop: '0.35rem',
-                fontSize: '0.9rem',
-              }}
-            >
-              {dayTotal === 0
-                ? 'Hábitos, rotina e treino de hoje entram neste anel.'
-                : [
-                    habitsTotal > 0 ? `${doneCount}/${habitsTotal} hábitos` : null,
-                    rotinaTotal > 0 ? `${rotinaDone}/${rotinaTotal} rotina` : null,
-                    treinoPoints > 0
-                      ? isTodayDone
-                        ? 'treino feito'
-                        : state.active
-                          ? `treino ${stats.progress}%`
-                          : 'treino por fazer'
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-            </p>
+      {todayItems.length > 0 && (
+        <>
+          <div className="section-label">
+            <h2>Hoje</h2>
+            <span>
+              {todayItems.filter((item) => item.done).length}/{todayItems.length}
+            </span>
           </div>
-        </div>
-
-        <div className="surface habit-list">
-          {todayItems.length === 0 ? (
-            <Link to="/habitos" className="habit-row home-empty-habits">
-              <span className="habit-info">
-                <strong>Nada para hoje</strong>
-                <span>Adiciona hábitos ou blocos de rotina</span>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-          ) : (
-            todayItems.map((item) => (
+          <div className="surface habit-list">
+            {todayItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -839,15 +616,15 @@ export function HomePage() {
                 {item.kind === 'habit' && item.streak != null ? (
                   <span className="streak">{item.streak}d</span>
                 ) : (
-                  <span className="streak">{item.kind === 'rotina' ? 'rotina' : ''}</span>
+                  <span className="streak">rotina</span>
                 )}
               </button>
-            ))
-          )}
-        </div>
-      </motion.div>
+            ))}
+          </div>
+        </>
+      )}
 
-      <ActivityHeatmap log={activityLog} />
+      <ActivityHeatmap log={activityLog} range="month" title="Este mês" />
     </PageTransition>
   )
 }
