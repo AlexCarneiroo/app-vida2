@@ -14,6 +14,7 @@ import {
 import { emptyJogosState } from '../data/jogosDefaults'
 import { defaultWeeklyGoals, normalizeSex } from '../data/saudeDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
+import { exercisesForMuscle } from '../data/exerciseLibrary'
 import { normalizeExerciseName } from './treinoStats'
 import {
   SCHEMA_VERSION,
@@ -55,7 +56,9 @@ import type {
 } from '../types/saude'
 import type {
   ActiveWorkout,
+  CustomExercise,
   Exercise,
+  ExerciseLoadMemory,
   SavedCustomPlan,
   TreinoSettings,
   TreinoState,
@@ -110,6 +113,75 @@ export function normalizeTreino(raw: unknown): TreinoState {
       savedAt: p.savedAt || new Date().toISOString(),
       templates: asArray<WorkoutTemplate>(p.templates),
     }))
+  const customExercises: CustomExercise[] = []
+  const customKeys = new Set<string>()
+  for (const exercise of asArray<CustomExercise>(parsed.customExercises)) {
+    if (!exercise || typeof exercise.name !== 'string') continue
+    const name = exercise.name.trim()
+    const muscle = exercise.muscle
+    if (!name || !exercisesForMuscle(muscle).length) continue
+    const key = `${muscle}:${normalizeExerciseName(name)}`
+    if (
+      customKeys.has(key) ||
+      exercisesForMuscle(muscle).some(
+        (item) => normalizeExerciseName(item) === normalizeExerciseName(name),
+      )
+    ) {
+      continue
+    }
+    customKeys.add(key)
+    customExercises.push({
+      name,
+      muscle,
+      addedAt:
+        typeof exercise.addedAt === 'string'
+          ? exercise.addedAt
+          : new Date().toISOString(),
+    })
+  }
+  const exerciseLoadMemory: Record<string, ExerciseLoadMemory> = {}
+  const rawMemory =
+    parsed.exerciseLoadMemory &&
+    typeof parsed.exerciseLoadMemory === 'object'
+      ? parsed.exerciseLoadMemory
+      : {}
+
+  for (const [rawKey, rawEntry] of Object.entries(rawMemory)) {
+    if (!rawEntry || typeof rawEntry !== 'object') continue
+    const entry = rawEntry as ExerciseLoadMemory
+    const sets = asArray<{ reps: number; weight: number }>(entry.sets)
+      .map((set) => ({
+        reps: Math.max(0, Number(set.reps) || 0),
+        weight: Math.max(0, Number(set.weight) || 0),
+      }))
+    if (sets.length === 0) continue
+    const name = typeof entry.name === 'string' ? entry.name.trim() : rawKey
+    const key = normalizeExerciseName(name || rawKey)
+    if (!key) continue
+    exerciseLoadMemory[key] = {
+      name: name || rawKey,
+      sets,
+      updatedAt:
+        typeof entry.updatedAt === 'string'
+          ? entry.updatedAt
+          : new Date().toISOString(),
+    }
+  }
+
+  // Dados antigos passam a beneficiar automaticamente das últimas cargas.
+  for (const workout of history) {
+    for (const exercise of workout.exercises) {
+      const key = normalizeExerciseName(exercise.name)
+      if (!key || exerciseLoadMemory[key]) continue
+      const done = exercise.sets.filter((set) => set.done)
+      if (done.length === 0) continue
+      exerciseLoadMemory[key] = {
+        name: exercise.name,
+        sets: done.map((set) => ({ reps: set.reps, weight: set.weight })),
+        updatedAt: workout.completedAt || workout.startedAt,
+      }
+    }
+  }
 
   return {
     plan: plan.length > 0 ? plan : [],
@@ -146,6 +218,12 @@ export function normalizeTreino(raw: unknown): TreinoState {
     activeSavedPlanId:
       parsed.activeSavedPlanId === undefined ? null : parsed.activeSavedPlanId,
     savedPlans,
+    planName:
+      typeof parsed.planName === 'string'
+        ? parsed.planName.trim()
+        : savedPlans.find((p) => p.id === parsed.activeSavedPlanId)?.name ?? '',
+    exerciseLoadMemory,
+    customExercises,
   }
 }
 
@@ -405,6 +483,14 @@ export function mergeTreinoSafe(
     history,
     weekDone,
     settings: { ...secondary.settings, ...primary.settings },
+    exerciseLoadMemory: {
+      ...(secondary.exerciseLoadMemory ?? {}),
+      ...(primary.exerciseLoadMemory ?? {}),
+    },
+    customExercises: [
+      ...(secondary.customExercises ?? []),
+      ...(primary.customExercises ?? []),
+    ],
     savedPlans: (() => {
       const map = new Map<string, SavedCustomPlan>()
       for (const p of secondary.savedPlans ?? []) map.set(p.id, p)

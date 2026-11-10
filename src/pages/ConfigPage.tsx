@@ -14,6 +14,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { NotificationSettings } from '../components/notifications/NotificationSettings'
 import { Button } from '../components/ui/Button'
 import { PageTransition } from '../components/ui/PageTransition'
 import { useAuth } from '../hooks/useAuth'
@@ -351,6 +352,8 @@ export function ConfigPage() {
           </div>
         )}
       </section>
+
+      <NotificationSettings />
 
       <section className="surface config-panel" aria-label="Barra de menu">
         <h2 className="config-panel__title">Barra de menu</h2>

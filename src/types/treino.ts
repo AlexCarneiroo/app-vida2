@@ -134,6 +134,19 @@ export type SavedCustomPlan = {
   templates: WorkoutTemplate[]
 }
 
+/** Últimas séries/cargas usadas, indexadas pelo nome normalizado do exercício. */
+export type ExerciseLoadMemory = {
+  name: string
+  sets: { reps: number; weight: number }[]
+  updatedAt: string
+}
+
+export type CustomExercise = {
+  name: string
+  muscle: MuscleGroup
+  addedAt: string
+}
+
 export type TreinoState = {
   plan: WorkoutTemplate[]
   active: ActiveWorkout | null
@@ -146,6 +159,12 @@ export type TreinoState = {
   activeSavedPlanId: string | null
   /** planos semanais personalizados guardados */
   savedPlans: SavedCustomPlan[]
+  /** Nome que o utilizador deu ao plano atual (aparece no topo da sessão). */
+  planName: string
+  /** Mantém a carga de cada exercício mesmo ao trocá-lo durante uma sessão. */
+  exerciseLoadMemory: Record<string, ExerciseLoadMemory>
+  /** Exercícios escritos pelo utilizador e disponíveis nas próximas escolhas. */
+  customExercises: CustomExercise[]
 }
 
 export type LoadSuggestion = {

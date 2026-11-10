@@ -5562,6 +5562,80 @@ button.activity-map__cell:focus-visible {
   color: inherit;
 }
 
+/* —— Notificações —— */
+.notif-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.notif-item + .notif-item {
+  margin-top: 0.95rem;
+}
+
+.notif-item__opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 0.85rem;
+  margin-left: 3.05rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--ink-rgb), 0.08);
+  background: rgba(var(--ink-rgb), 0.03);
+}
+
+.notif-time {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.notif-time > span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.notif-time input {
+  min-height: 2.4rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--ink-rgb), 0.14);
+  background: var(--input-bg);
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.notif-tests {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.notif-check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.notif-check input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--jade);
+}
+
+@media (max-width: 520px) {
+  .notif-item__opts {
+    margin-left: 0;
+  }
+}
+
 .config-pref__row--nested {
   margin-top: 0.35rem;
   padding-left: 0.35rem;
@@ -5768,6 +5842,9 @@ button.activity-map__cell:focus-visible {
 
 .exercise-picker {
   gap: 0.75rem;
+  max-height: calc(100dvh - var(--nav-h) - var(--safe-bottom) - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .exercise-picker__field {

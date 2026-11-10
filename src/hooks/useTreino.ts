@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { defaultExerciseName } from '../data/exerciseLibrary'
+import {
+  defaultExerciseName,
+  exercisesForMuscle,
+} from '../data/exerciseLibrary'
 import {
   buildWorkoutTemplate,
   type WorkoutStarterId,
@@ -29,7 +32,9 @@ import {
 import { useAuth } from './useAuth'
 import type {
   ActiveWorkout,
+  CustomExercise,
   Exercise,
+  ExerciseLoadMemory,
   ExerciseProgress,
   LoadSuggestion,
   MuscleGroup,
@@ -62,6 +67,9 @@ const emptyState: TreinoState = {
   activePresetId: null,
   activeSavedPlanId: null,
   savedPlans: [],
+  planName: '',
+  exerciseLoadMemory: {},
+  customExercises: [],
 }
 
 function loadState(): TreinoState {
@@ -120,13 +128,19 @@ function applyHydratedTreino(current: TreinoState, incoming: TreinoState): Trein
 function templateToExercises(
   template: WorkoutTemplate,
   history: ActiveWorkout[],
+  memory: Record<string, ExerciseLoadMemory>,
 ): Exercise[] {
   return template.exercises.map((ex) => {
     const last = findLastExercise(history, ex.id, ex.name)
+    const remembered = memory[normalizeExerciseName(ex.name)]?.sets
+    const previous =
+      remembered && remembered.length > 0
+        ? remembered
+        : last?.sets.filter((set) => set.done)
     const baseSets =
-      last && last.sets.some((s) => s.done)
+      previous && previous.length > 0
         ? ex.sets.map((s, i) => {
-            const prev = last.sets[i] ?? last.sets[last.sets.length - 1]
+            const prev = previous[i] ?? previous[previous.length - 1]
             return {
               reps: prev?.reps ?? s.reps,
               weight: prev?.weight ?? s.weight,
@@ -166,6 +180,63 @@ function defaultActiveSets(muscle: MuscleGroup): WorkoutSetDraft[] {
 }
 
 type WorkoutSetDraft = { reps: number; weight: number }
+
+function rememberedActiveSets(
+  name: string,
+  muscle: MuscleGroup,
+  fallback: WorkoutSetDraft[],
+  memory: Record<string, ExerciseLoadMemory>,
+  history: ActiveWorkout[],
+): WorkoutSetDraft[] {
+  if (muscle === 'cardio') return fallback.map((set) => ({ ...set, weight: 0 }))
+  const saved = memory[normalizeExerciseName(name)]?.sets
+  const previous =
+    saved && saved.length > 0
+      ? saved
+      : findLastExercise(history, '', name)?.sets.filter((set) => set.done)
+  if (!previous || previous.length === 0) return fallback
+  return fallback.map((set, index) => {
+    const prior = previous[index] ?? previous[previous.length - 1]
+    return {
+      reps: prior?.reps ?? set.reps,
+      weight: prior?.weight ?? set.weight,
+    }
+  })
+}
+
+function exerciseMemoryEntry(
+  exercise: Pick<Exercise, 'name' | 'sets'>,
+  onlyDone = false,
+): ExerciseLoadMemory | null {
+  const source = onlyDone ? exercise.sets.filter((set) => set.done) : exercise.sets
+  if (source.length === 0) return null
+  return {
+    name: exercise.name,
+    sets: source.map((set) => ({ reps: set.reps, weight: set.weight })),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function saveCustomExercise(
+  current: CustomExercise[],
+  name: string,
+  muscle: MuscleGroup,
+): CustomExercise[] {
+  const normalized = normalizeExerciseName(name)
+  const isBuiltIn = exercisesForMuscle(muscle).some(
+    (item) => normalizeExerciseName(item) === normalized,
+  )
+  const alreadySaved = current.some(
+    (item) =>
+      item.muscle === muscle &&
+      normalizeExerciseName(item.name) === normalized,
+  )
+  if (!normalized || isBuiltIn || alreadySaved) return current
+  return [
+    ...current,
+    { name: name.trim(), muscle, addedAt: new Date().toISOString() },
+  ]
+}
 
 /** Atualiza só cargas/reps dos exercícios que já existiam no plano. */
 function syncPlanFromWorkout(
@@ -400,7 +471,11 @@ export function useTreino() {
         name: template.name,
         focus: template.focus,
         startedAt: new Date().toISOString(),
-        exercises: templateToExercises(template, prev.history),
+        exercises: templateToExercises(
+          template,
+          prev.history,
+          prev.exerciseLoadMemory,
+        ),
       },
     }))
   }, [])
@@ -439,20 +514,31 @@ export function useTreino() {
     ) => {
       setState((prev) => {
         if (!prev.active) return prev
+        let changedExercise: Exercise | null = null
+        const exercises = prev.active.exercises.map((ex) => {
+          if (ex.id !== exerciseId) return ex
+          changedExercise = {
+            ...ex,
+            sets: ex.sets.map((s) =>
+              s.id === setId ? { ...s, ...patch } : s,
+            ),
+          }
+          return changedExercise
+        })
+        const memoryEntry = changedExercise
+          ? exerciseMemoryEntry(changedExercise)
+          : null
         return {
           ...prev,
+          exerciseLoadMemory: memoryEntry
+            ? {
+                ...prev.exerciseLoadMemory,
+                [normalizeExerciseName(memoryEntry.name)]: memoryEntry,
+              }
+            : prev.exerciseLoadMemory,
           active: {
             ...prev.active,
-            exercises: prev.active.exercises.map((ex) =>
-              ex.id !== exerciseId
-                ? ex
-                : {
-                    ...ex,
-                    sets: ex.sets.map((s) =>
-                      s.id === setId ? { ...s, ...patch } : s,
-                    ),
-                  },
-            ),
+            exercises,
           },
         }
       })
@@ -515,13 +601,20 @@ export function useTreino() {
       const runtimeId = makeId(sourceId)
       setState((prev) => {
         if (!prev.active) return prev
+        const baseSets = rememberedActiveSets(
+          name,
+          input.muscle,
+          defaultActiveSets(input.muscle),
+          prev.exerciseLoadMemory,
+          prev.history,
+        )
         const next: Exercise = {
           id: runtimeId,
           sourceId,
           name,
           muscle: input.muscle,
           notes: input.notes,
-          sets: defaultActiveSets(input.muscle).map((s) => ({
+          sets: baseSets.map((s) => ({
             id: makeId('set'),
             reps: s.reps,
             weight: s.weight,
@@ -530,6 +623,11 @@ export function useTreino() {
         }
         return {
           ...prev,
+          customExercises: saveCustomExercise(
+            prev.customExercises,
+            name,
+            input.muscle,
+          ),
           active: {
             ...prev.active,
             structureDirty: true,
@@ -551,22 +649,38 @@ export function useTreino() {
       if (!name) return
       setState((prev) => {
         if (!prev.active) return prev
+        const outgoing = prev.active.exercises.find((ex) => ex.id === exerciseId)
+        const outgoingMemory = outgoing ? exerciseMemoryEntry(outgoing) : null
+        const memory = outgoingMemory
+          ? {
+              ...prev.exerciseLoadMemory,
+              [normalizeExerciseName(outgoingMemory.name)]: outgoingMemory,
+            }
+          : prev.exerciseLoadMemory
         return {
           ...prev,
+          exerciseLoadMemory: memory,
+          customExercises: saveCustomExercise(
+            prev.customExercises,
+            name,
+            input.muscle,
+          ),
           active: {
             ...prev.active,
             structureDirty: true,
             exercises: prev.active.exercises.map((ex) => {
               if (ex.id !== exerciseId) return ex
               const sameMuscle = ex.muscle === input.muscle
-              const baseSets = sameMuscle
-                ? ex.sets.map((s) => ({
-                    id: makeId('set'),
-                    reps: s.reps,
-                    weight: input.muscle === 'cardio' ? 0 : s.weight,
-                    done: false,
-                  }))
-                : defaultActiveSets(input.muscle).map((s) => ({
+              const fallback = sameMuscle
+                ? ex.sets.map((s) => ({ reps: s.reps, weight: s.weight }))
+                : defaultActiveSets(input.muscle)
+              const baseSets = rememberedActiveSets(
+                name,
+                input.muscle,
+                fallback,
+                memory,
+                prev.history,
+              ).map((s) => ({
                     id: makeId('set'),
                     reps: s.reps,
                     weight: s.weight,
@@ -592,8 +706,16 @@ export function useTreino() {
     setState((prev) => {
       if (!prev.active) return prev
       if (prev.active.exercises.length <= 1) return prev
+      const removed = prev.active.exercises.find((ex) => ex.id === exerciseId)
+      const memoryEntry = removed ? exerciseMemoryEntry(removed) : null
       return {
         ...prev,
+        exerciseLoadMemory: memoryEntry
+          ? {
+              ...prev.exerciseLoadMemory,
+              [normalizeExerciseName(memoryEntry.name)]: memoryEntry,
+            }
+          : prev.exerciseLoadMemory,
         active: {
           ...prev.active,
           structureDirty: true,
@@ -661,6 +783,21 @@ export function useTreino() {
     [state.history],
   )
 
+  const rememberCustomExercise = useCallback(
+    (name: string, muscle: MuscleGroup) => {
+      if (!name.trim()) return
+      setState((prev) => ({
+        ...prev,
+        customExercises: saveCustomExercise(
+          prev.customExercises,
+          name,
+          muscle,
+        ),
+      }))
+    },
+    [],
+  )
+
   const completeWorkout = useCallback(
     (options?: { syncStructure?: boolean }) => {
       setState((prev) => {
@@ -672,9 +809,17 @@ export function useTreino() {
         const summary = buildWorkoutSummary(finished, prev.history)
         queueMicrotask(() => setLastSummary(summary))
         const syncStructure = options?.syncStructure === true
+        const exerciseLoadMemory = { ...prev.exerciseLoadMemory }
+        for (const exercise of finished.exercises) {
+          const entry = exerciseMemoryEntry(exercise, true)
+          if (entry) {
+            exerciseLoadMemory[normalizeExerciseName(entry.name)] = entry
+          }
+        }
         return {
           ...prev,
           active: null,
+          exerciseLoadMemory,
           history: [finished, ...prev.history].slice(0, 80),
           weekDone: {
             ...prev.weekDone,
@@ -810,14 +955,19 @@ export function useTreino() {
     [],
   )
 
-  const startBlankCustomPlan = useCallback(() => {
+  const startBlankCustomPlan = useCallback((name = '') => {
     setState((prev) => ({
       ...prev,
       plan: [],
       activePresetId: null,
       activeSavedPlanId: null,
+      planName: name.trim(),
       active: null,
     }))
+  }, [])
+
+  const setPlanName = useCallback((name: string) => {
+    setState((prev) => ({ ...prev, planName: name }))
   }, [])
 
   const removeTemplate = useCallback((templateId: string) => {
@@ -979,6 +1129,7 @@ export function useTreino() {
       plan: clonePlan(WEEKLY_PLAN),
       activePresetId: 'ppl-classic',
       activeSavedPlanId: null,
+      planName: getPresetById('ppl-classic')?.name ?? '',
     }))
   }, [])
 
@@ -987,12 +1138,14 @@ export function useTreino() {
       plan: WorkoutTemplate[]
       activePresetId: string | null
       activeSavedPlanId: string | null
+      planName: string
     }) => {
       setState((prev) => ({
         ...prev,
         plan: clonePlan(snapshot.plan),
         activePresetId: snapshot.activePresetId,
         activeSavedPlanId: snapshot.activeSavedPlanId,
+        planName: snapshot.planName,
       }))
     },
     [],
@@ -1005,7 +1158,8 @@ export function useTreino() {
       ...prev,
       plan: clonePresetPlan(preset),
       activePresetId: preset.id,
-        activeSavedPlanId: null,
+      activeSavedPlanId: null,
+      planName: preset.name,
       active: null,
     }))
   }, [])
@@ -1031,6 +1185,7 @@ export function useTreino() {
         ...prev,
         activePresetId: null,
         activeSavedPlanId: id,
+        planName: trimmed,
         savedPlans: [entry, ...(prev.savedPlans ?? [])],
       }
     })
@@ -1046,6 +1201,7 @@ export function useTreino() {
         plan: clonePlan(found.templates),
         activePresetId: null,
         activeSavedPlanId: found.id,
+        planName: found.name,
         active: null,
       }
     })
@@ -1065,6 +1221,7 @@ export function useTreino() {
     if (!trimmed) return
     setState((prev) => ({
       ...prev,
+      planName: prev.activeSavedPlanId === planId ? trimmed : prev.planName,
       savedPlans: (prev.savedPlans ?? []).map((p) =>
         p.id === planId ? { ...p, name: trimmed } : p,
       ),
@@ -1082,6 +1239,7 @@ export function useTreino() {
           p.id === planId
             ? {
                 ...p,
+                name: prev.planName.trim() || p.name,
                 templates: clonePlan(prev.plan),
                 savedAt: new Date().toISOString(),
               }
@@ -1147,6 +1305,7 @@ export function useTreino() {
     applyWeightBump,
     applySuggestedWeight,
     suggestionFor,
+    rememberCustomExercise,
     completeWorkout,
     setRestSeconds,
     setRestTimerEnabled,
@@ -1156,6 +1315,7 @@ export function useTreino() {
     updateTemplate,
     addTemplate,
     startBlankCustomPlan,
+    setPlanName,
     removeTemplate,
     addExercise,
     updateExercise,

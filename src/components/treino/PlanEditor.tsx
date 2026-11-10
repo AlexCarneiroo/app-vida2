@@ -1,5 +1,5 @@
 import { BookmarkPlus, ChevronLeft, ChevronRight, Moon, Plus, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   defaultExerciseName,
   exercisesForMuscle,
@@ -15,12 +15,22 @@ import {
   WORKOUT_STARTERS,
   type WorkoutStarterId,
 } from '../../data/workoutStarters'
-import type { MuscleGroup, TemplateExercise, WorkoutTemplate } from '../../types/treino'
+import { normalizeExerciseName } from '../../lib/treinoStats'
+import type {
+  CustomExercise,
+  MuscleGroup,
+  TemplateExercise,
+  WorkoutTemplate,
+} from '../../types/treino'
 import { Button } from '../ui/Button'
 import { useConfirm, useToast } from '../ui/Feedback'
 
 type PlanEditorProps = {
   plan: WorkoutTemplate[]
+  planName: string
+  onPlanNameChange: (name: string) => void
+  customExercises: CustomExercise[]
+  onRememberCustomExercise: (name: string, muscle: MuscleGroup) => void
   activeSavedPlanId: string | null
   onUpdateTemplate: (
     templateId: string,
@@ -52,6 +62,10 @@ type PlanEditorProps = {
 
 export function PlanEditor({
   plan,
+  planName,
+  onPlanNameChange,
+  customExercises,
+  onRememberCustomExercise,
   activeSavedPlanId,
   onUpdateTemplate,
   onAddTemplate,
@@ -73,8 +87,21 @@ export function PlanEditor({
   const [dayIndex, setDayIndex] = useState(0)
   const [customExId, setCustomExId] = useState<string | null>(null)
   const [showSave, setShowSave] = useState(false)
-  const [saveName, setSaveName] = useState('')
   const [saving, setSaving] = useState(false)
+  const nameRef = useRef<HTMLInputElement>(null)
+
+  function requireName() {
+    if (planName.trim()) return true
+    toast('Dá um nome ao teu plano', 'warn')
+    nameRef.current?.focus()
+    return false
+  }
+
+  function finish() {
+    if (!requireName()) return
+    onPlanNameChange(planName.trim())
+    onDone()
+  }
 
   const dayOfWeek = PLAN_DAY_ORDER[dayIndex]
   const template = useMemo(
@@ -93,7 +120,7 @@ export function PlanEditor({
   function goNext() {
     setCustomExId(null)
     if (dayIndex >= PLAN_DAY_ORDER.length - 1) {
-      onDone()
+      finish()
       return
     }
     setDayIndex((i) => i + 1)
@@ -158,20 +185,16 @@ export function PlanEditor({
       toast('Adiciona pelo menos um dia de treino', 'warn')
       return
     }
-    if (!saveName.trim()) {
-      toast('Dá um nome ao teu plano', 'warn')
-      return
-    }
+    if (!requireName()) return
     setSaving(true)
-    const id = onSavePlan(saveName.trim())
+    const id = onSavePlan(planName.trim())
     setSaving(false)
     if (!id) {
       toast('Não foi possível guardar', 'warn')
       return
     }
     setShowSave(false)
-    setSaveName('')
-    toast('Plano personalizado guardado', 'ok')
+    toast(`“${planName.trim()}” guardado`, 'ok')
   }
 
   function handleUpdateExisting() {
@@ -180,6 +203,7 @@ export function PlanEditor({
       toast('Adiciona pelo menos um dia de treino', 'warn')
       return
     }
+    if (!requireName()) return
     setSaving(true)
     onUpdateSavedPlan(activeSavedPlanId)
     setSaving(false)
@@ -250,10 +274,26 @@ export function PlanEditor({
           >
             {showSave ? 'Fechar' : 'Guardar plano'}
           </Button>
-          <button type="button" className="btn btn--primary" onClick={onDone}>
+          <button type="button" className="btn btn--primary" onClick={finish}>
             Pronto
           </button>
         </div>
+      </div>
+
+      <div className="surface plan-save-form">
+        <label className="plan-field plan-field--grow">
+          <span>Nome do plano</span>
+          <input
+            ref={nameRef}
+            type="text"
+            value={planName}
+            onChange={(e) => onPlanNameChange(e.target.value)}
+            placeholder="Ex.: Treino para treinar em casa"
+            maxLength={60}
+            required
+            autoFocus={!planName}
+          />
+        </label>
       </div>
 
       {showSave && (
@@ -264,17 +304,7 @@ export function PlanEditor({
             handleSaveNew()
           }}
         >
-          <label className="plan-field plan-field--grow">
-            <span>Nome do teu plano</span>
-            <input
-              type="text"
-              value={saveName}
-              onChange={(e) => setSaveName(e.target.value)}
-              placeholder="Ex.: Meu PPL de casa"
-              required
-              autoFocus
-            />
-          </label>
+          <p className="page-kicker">Guardar como personalizado</p>
           <Button
             type="submit"
             variant="primary"
@@ -282,7 +312,7 @@ export function PlanEditor({
             loading={saving}
             loadingLabel="A guardar…"
           >
-            Guardar personalizado
+            Guardar “{planName.trim() || 'plano'}”
           </Button>
         </form>
       )}
@@ -406,7 +436,23 @@ export function PlanEditor({
 
               <div className="plan-block__exercises">
                 {template.exercises.map((ex, exIndex) => {
-                  const library = exercisesForMuscle(ex.muscle)
+                  const builtIn = exercisesForMuscle(ex.muscle)
+                  const added = customExercises
+                    .filter((item) => item.muscle === ex.muscle)
+                    .map((item) => item.name)
+                  const builtInKeys = new Set(
+                    builtIn.map(normalizeExerciseName),
+                  )
+                  const library = [
+                    ...builtIn,
+                    ...added.filter(
+                      (name) =>
+                        !builtInKeys.has(normalizeExerciseName(name)),
+                    ),
+                  ]
+                  const addedKeys = new Set(
+                    added.map(normalizeExerciseName),
+                  )
                   const inLibrary = library.includes(ex.name)
                   const showCustom =
                     customExId === ex.id || (!inLibrary && ex.name.length > 0)
@@ -463,6 +509,9 @@ export function PlanEditor({
                           {library.map((name) => (
                             <option key={name} value={name}>
                               {name}
+                              {addedKeys.has(normalizeExerciseName(name))
+                                ? ' (adicionado)'
+                                : ''}
                             </option>
                           ))}
                           <option value="__other__">Outro (escrever)…</option>
@@ -481,6 +530,9 @@ export function PlanEditor({
                               onUpdateExercise(template.id, ex.id, {
                                 name: e.target.value,
                               })
+                            }
+                            onBlur={() =>
+                              onRememberCustomExercise(ex.name, ex.muscle)
                             }
                           />
                         </label>

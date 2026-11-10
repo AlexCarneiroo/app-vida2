@@ -2,7 +2,12 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { formatKg } from '../../lib/date'
-import { workoutSetsDone, workoutVolume } from '../../lib/treinoStats'
+import {
+  formatWorkoutDurationLabel,
+  workoutDurationMinutes,
+  workoutSetsDone,
+  workoutVolume,
+} from '../../lib/treinoStats'
 import type { ActiveWorkout } from '../../types/treino'
 
 type HistoryListProps = {
@@ -23,6 +28,9 @@ export function HistoryList({ history, limit }: HistoryListProps) {
         const open = openId === w.startedAt
         const setsDone = workoutSetsDone(w)
         const volume = Math.round(workoutVolume(w))
+        const duration = formatWorkoutDurationLabel(
+          workoutDurationMinutes(w.startedAt, w.completedAt),
+        )
         return (
           <div
             key={w.startedAt}
@@ -37,7 +45,7 @@ export function HistoryList({ history, limit }: HistoryListProps) {
               <div>
                 <strong>{w.name}</strong>
                 <span>
-                  {w.dateKey} · {volume} kg vol.
+                  {w.dateKey} · {duration} · {volume} kg vol.
                 </span>
               </div>
               <em>{setsDone} séries</em>

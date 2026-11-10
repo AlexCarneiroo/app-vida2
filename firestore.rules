@@ -7,5 +7,12 @@ service cloud.firestore {
         && request.auth.uid == userId
         && docId in ['treino', 'financas', 'profile', 'habitos', 'rotina', 'nutricao'];
     }
+
+    // Push (lembretes com o app fechado): assinaturas e configurações do próprio
+    // utilizador. O servidor (Admin SDK) ignora estas regras e grava `sent`.
+    match /pushUsers/{userId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
   }
 }

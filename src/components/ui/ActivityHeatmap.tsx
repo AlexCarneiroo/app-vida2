@@ -15,6 +15,8 @@ type Props = {
   /** Máximo de semanas no modo year (default 53). */
   weeks?: number
   className?: string
+  /** Texto específico ao selecionar um dia, por exemplo o treino realizado. */
+  describeDay?: (dateKey: string) => string
 }
 
 const WEEKDAY_LABELS = ['', 'Seg', '', 'Qua', '', 'Sex', ''] as const
@@ -43,6 +45,7 @@ export function ActivityHeatmap({
   range = 'year',
   weeks: maxWeeks = 53,
   className = '',
+  describeDay,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [layout, setLayout] = useState({
@@ -51,7 +54,8 @@ export function ActivityHeatmap({
     gap: 2,
     needsScroll: true,
   })
-  const [tip, setTip] = useState<string | null>(null)
+  const [hoverTip, setHoverTip] = useState<string | null>(null)
+  const [selectedTip, setSelectedTip] = useState<string | null>(null)
 
   useEffect(() => {
     if (range === 'month') return
@@ -103,11 +107,19 @@ export function ActivityHeatmap({
       ? `${model.total} ${model.total === 1 ? 'treino' : 'treinos'} · ${monthName}`
       : `${model.total} ${model.total === 1 ? 'atividade' : 'atividades'} em ${model.year}`)
 
-  const showTip = (cell: { dateKey: string; count: number }) => {
-    setTip(
-      `${formatDateBR(cell.dateKey)} · ${cell.count} ${cell.count === 1 ? 'atividade' : 'atividades'}`,
-    )
+  const dayTip = (cell: { dateKey: string; count: number }) => {
+    const detail = describeDay?.(cell.dateKey)
+    return detail
+      ? `${formatDateBR(cell.dateKey)} · ${detail}`
+      : `${formatDateBR(cell.dateKey)} · ${cell.count} ${cell.count === 1 ? 'atividade' : 'atividades'}`
   }
+  const showTip = (cell: { dateKey: string; count: number }) =>
+    setHoverTip(dayTip(cell))
+  const selectTip = (cell: { dateKey: string; count: number }) => {
+    setSelectedTip(dayTip(cell))
+    setHoverTip(null)
+  }
+  const tip = hoverTip ?? selectedTip
 
   if (range === 'month') {
     return (
@@ -119,7 +131,8 @@ export function ActivityHeatmap({
         tip={tip}
         className={className}
         onShowTip={showTip}
-        onClearTip={() => setTip(null)}
+        onSelectTip={selectTip}
+        onClearTip={() => setHoverTip(null)}
       />
     )
   }
@@ -181,10 +194,11 @@ export function ActivityHeatmap({
                       disabled={!cell.inRange}
                       aria-label={`${formatDateBR(cell.dateKey)}: ${cell.count} ${cell.count === 1 ? 'atividade' : 'atividades'}`}
                       onFocus={() => showTip(cell)}
-                      onBlur={() => setTip(null)}
+                      onBlur={() => setHoverTip(null)}
                       onMouseEnter={() => showTip(cell)}
-                      onMouseLeave={() => setTip(null)}
+                      onMouseLeave={() => setHoverTip(null)}
                       onTouchStart={() => showTip(cell)}
+                      onClick={() => selectTip(cell)}
                     />
                   ))}
                 </div>
@@ -223,6 +237,7 @@ type MonthProps = {
   tip: string | null
   className: string
   onShowTip: (cell: { dateKey: string; count: number }) => void
+  onSelectTip: (cell: { dateKey: string; count: number }) => void
   onClearTip: () => void
 }
 
@@ -233,6 +248,7 @@ function MonthHeatmap({
   tip,
   className,
   onShowTip,
+  onSelectTip,
   onClearTip,
 }: MonthProps) {
   const now = new Date()
@@ -283,6 +299,7 @@ function MonthHeatmap({
                   onMouseEnter={() => interactive && onShowTip(cell)}
                   onMouseLeave={onClearTip}
                   onTouchStart={() => interactive && onShowTip(cell)}
+                  onClick={() => interactive && onSelectTip(cell)}
                 >
                   <span className="activity-map__month-day-num">{dayNum}</span>
                 </button>

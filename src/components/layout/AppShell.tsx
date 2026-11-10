@@ -8,8 +8,11 @@ import { PullToRefresh } from '../ui/PullToRefresh'
 import { ensureCloudUser } from '../../lib/cloudSync'
 import { firebaseReady, initAnalytics } from '../../lib/firebase'
 import { useEffect } from 'react'
+import { useReminderRunner } from '../../hooks/useReminderRunner'
 
 export function AppShell() {
+  useReminderRunner()
+
   useEffect(() => {
     if (!firebaseReady) return
     void ensureCloudUser()

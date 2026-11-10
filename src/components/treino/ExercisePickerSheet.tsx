@@ -1,10 +1,12 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   MUSCLE_LABELS,
   defaultExerciseName,
   exercisesForMuscle,
 } from '../../data/exerciseLibrary'
-import type { MuscleGroup } from '../../types/treino'
+import { normalizeExerciseName } from '../../lib/treinoStats'
+import type { CustomExercise, MuscleGroup } from '../../types/treino'
 import { Button } from '../ui/Button'
 
 const MUSCLES = Object.keys(MUSCLE_LABELS) as MuscleGroup[]
@@ -18,6 +20,7 @@ type ExercisePickerSheetProps = {
   title: string
   confirmLabel: string
   initial?: Partial<ExercisePickerValue>
+  customExercises?: CustomExercise[]
   onConfirm: (value: ExercisePickerValue) => void
   onCancel: () => void
 }
@@ -26,11 +29,26 @@ export function ExercisePickerSheet({
   title,
   confirmLabel,
   initial,
+  customExercises = [],
   onConfirm,
   onCancel,
 }: ExercisePickerSheetProps) {
   const [muscle, setMuscle] = useState<MuscleGroup>(initial?.muscle ?? 'peito')
-  const library = useMemo(() => exercisesForMuscle(muscle), [muscle])
+  const customNames = useMemo(
+    () =>
+      customExercises
+        .filter((exercise) => exercise.muscle === muscle)
+        .map((exercise) => exercise.name),
+    [customExercises, muscle],
+  )
+  const library = useMemo(
+    () => [...exercisesForMuscle(muscle), ...customNames],
+    [customNames, muscle],
+  )
+  const customKeys = useMemo(
+    () => new Set(customNames.map(normalizeExerciseName)),
+    [customNames],
+  )
   const initialInLibrary =
     initial?.name && library.includes(initial.name) ? initial.name : library[0]
   const [nameChoice, setNameChoice] = useState(
@@ -59,7 +77,15 @@ export function ExercisePickerSheet({
     onConfirm({ name, muscle })
   }
 
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
+
+  return createPortal(
     <div className="app-confirm">
       <button
         type="button"
@@ -100,6 +126,9 @@ export function ExercisePickerSheet({
             {library.map((n) => (
               <option key={n} value={n}>
                 {n}
+                {customKeys.has(normalizeExerciseName(n))
+                  ? ' (adicionado)'
+                  : ''}
               </option>
             ))}
             <option value="__other__">Outro (escrever)…</option>
@@ -129,6 +158,7 @@ export function ExercisePickerSheet({
           </Button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   )
 }

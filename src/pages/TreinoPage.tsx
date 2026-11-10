@@ -46,9 +46,11 @@ import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
 import { dateKey, weekDates } from '../lib/date'
 import {
+  formatWorkoutDurationLabel,
   instructorTip,
   lastSessionMaxWeight,
   shouldAskInstructor,
+  workoutDurationMinutes,
   workoutSetsDone,
   workoutVolume,
 } from '../lib/treinoStats'
@@ -85,6 +87,7 @@ export function TreinoPage() {
     removeActiveExercise,
     applySuggestedWeight,
     suggestionFor,
+    rememberCustomExercise,
     completeWorkout,
     setRestSeconds,
     setRestTimerEnabled,
@@ -101,6 +104,7 @@ export function TreinoPage() {
     resetPlan,
     restorePlanEdit,
     startBlankCustomPlan,
+    setPlanName,
     applyPreset,
     saveCurrentPlan,
     applySavedPlan,
@@ -123,6 +127,7 @@ export function TreinoPage() {
     plan: WorkoutTemplate[]
     activePresetId: string | null
     activeSavedPlanId: string | null
+    planName: string
   } | null>(null)
   const [selectedDayKey, setSelectedDayKey] = useState<string>(() => dateKey())
   const [picker, setPicker] = useState<
@@ -188,6 +193,11 @@ export function TreinoPage() {
   const currentSavedPlan = state.activeSavedPlanId
     ? (state.savedPlans ?? []).find((p) => p.id === state.activeSavedPlanId)
     : null
+  const activePlanLabel =
+    state.planName.trim() ||
+    currentSavedPlan?.name ||
+    currentPreset?.name ||
+    'Plano personalizado'
 
   const selectedDay = useMemo(
     () => days.find((d) => dateKey(d) === selectedDayKey) ?? days.find((d) => dateKey(d) === todayKey) ?? days[0],
@@ -389,6 +399,7 @@ export function TreinoPage() {
       plan: clonePlan(plan),
       activePresetId: state.activePresetId,
       activeSavedPlanId: state.activeSavedPlanId,
+      planName: state.planName,
     })
     setIdleView('edit')
   }
@@ -398,10 +409,11 @@ export function TreinoPage() {
       plan: clonePlan(plan),
       activePresetId: state.activePresetId,
       activeSavedPlanId: state.activeSavedPlanId,
+      planName: state.planName,
     })
     startBlankCustomPlan()
     setIdleView('edit')
-    toast('Monta os teus dias — escolhe o tipo de treino em cada um', 'info')
+    toast('Dá um nome ao plano e monta os teus dias', 'info')
   }
 
   function handleEditorDone() {
@@ -496,11 +508,17 @@ export function TreinoPage() {
           </p>
           <h1 className="page-title">
             {showSession
-              ? 'Treino'
+              ? activePlanLabel
               : (showPanel || showSummary) && panelMeta
                 ? panelMeta.title
                 : 'Treino'}
           </h1>
+          {showSession && active && (
+            <p className="page-sub">
+              {active.name}
+              {active.focus ? ` · ${active.focus}` : ''}
+            </p>
+          )}
           {showHome && (
             <p className="page-sub">
               Edita um dia de cada vez. Dias sem treino ficam como descanso
@@ -625,6 +643,23 @@ export function TreinoPage() {
             log={treinoLog}
             range="month"
             title="Treinos no mês"
+            describeDay={(key) => {
+              const sessions = state.history.filter(
+                (workout) => workout.dateKey === key,
+              )
+              if (sessions.length === 0) return 'Nenhum treino realizado'
+              return sessions
+                .map(
+                  (workout) =>
+                    `${workout.name} (${formatWorkoutDurationLabel(
+                      workoutDurationMinutes(
+                        workout.startedAt,
+                        workout.completedAt,
+                      ),
+                    )})`,
+                )
+                .join(' + ')
+            }}
           />
         </>
       )}
@@ -940,6 +975,10 @@ export function TreinoPage() {
             {idleView === 'edit' ? (
               <PlanEditor
                 plan={plan}
+                planName={state.planName}
+                onPlanNameChange={setPlanName}
+                customExercises={state.customExercises}
+                onRememberCustomExercise={rememberCustomExercise}
                 activeSavedPlanId={state.activeSavedPlanId}
                 onUpdateTemplate={updateTemplate}
                 onAddTemplate={addTemplate}
@@ -1043,11 +1082,7 @@ export function TreinoPage() {
                 </div>
 
                 <p className="treino-plan-hint">
-                  {currentSavedPlan
-                    ? `Plano atual: ${currentSavedPlan.name} (teu). `
-                    : currentPreset
-                      ? `Plano atual: ${currentPreset.name}. `
-                      : 'Plano personalizado. '}
+                  Plano atual: <strong>{activePlanLabel}</strong>.{' '}
                   Usa <em>Editar</em> para montar e <em>Guardar plano</em>, ou{' '}
                   <em>Planos</em> para trocar.
                 </p>
@@ -1220,6 +1255,7 @@ export function TreinoPage() {
         <ExercisePickerSheet
           title={picker.mode === 'add' ? 'Adicionar exercício' : 'Trocar exercício'}
           confirmLabel={picker.mode === 'add' ? 'Adicionar' : 'Trocar'}
+          customExercises={state.customExercises}
           initial={
             picker.mode === 'swap' && active
               ? (() => {
