@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vida-push",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "VAPID_SUBJECT": "mailto:alexcarneiro139@gmail.com"
+  }
+}

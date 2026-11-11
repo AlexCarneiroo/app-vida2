@@ -6,7 +6,7 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { ensureCloudUser } from './cloudSync'
-import { db, firebaseApp, firebaseReady } from './firebase'
+import { db, firebaseReady } from './firebase'
 import {
   currentPermission,
   getNotifSettings,
@@ -16,19 +16,27 @@ import {
 import type { NotifSettings } from './notifSettings'
 
 /**
- * Push de verdade (Web Push + VAPID): o servidor (Cloud Functions) envia os
+ * Push de verdade (Web Push + VAPID): o Cloudflare Worker envia os
  * lembretes na hora certa e o service worker mostra mesmo com o app fechado.
  * Coleção `pushUsers/{uid}` guarda as assinaturas e as configurações.
  */
 
 const VAPID_PUBLIC_KEY = String(
-  import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '',
+  import.meta.env.VITE_VAPID_PUBLIC_KEY ??
+    'BIKzF4MlO5_h7ghyhyMD6s1YAhJrfvzPy2rXM8ksUbDTBhSk0xkxvfZCn3bhCVtsWhX4Di7gqOK2lCQfzHagMdo',
 ).trim()
+const PUSH_API_URL = String(
+  import.meta.env.VITE_PUSH_API_URL ??
+    'https://vida-push.alexcarneiro139.workers.dev',
+)
+  .trim()
+  .replace(/\/$/, '')
 
 export function pushConfigured() {
   return (
     firebaseReady &&
     Boolean(VAPID_PUBLIC_KEY) &&
+    Boolean(PUSH_API_URL) &&
     typeof window !== 'undefined' &&
     'serviceWorker' in navigator &&
     'PushManager' in window
@@ -207,13 +215,17 @@ export type ServerTestResult = { sent: number; failed: number }
 
 /** Pede ao servidor para enviar uma notificação de teste a este utilizador. */
 export async function sendServerTest(): Promise<ServerTestResult> {
-  if (!firebaseApp) throw new Error('sem-nuvem')
-  await ensureCloudUser()
-  const { getFunctions, httpsCallable } = await import('firebase/functions')
-  const call = httpsCallable<unknown, ServerTestResult>(
-    getFunctions(firebaseApp),
-    'sendTestPush',
-  )
-  const res = await call({})
-  return res.data
+  if (!PUSH_API_URL) throw new Error('servidor-nao-configurado')
+  const user = await ensureCloudUser()
+  if (!user) throw new Error('sem-nuvem')
+  const token = await user.getIdToken()
+  const response = await fetch(`${PUSH_API_URL}/test`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+  })
+  const data = (await response.json()) as ServerTestResult & {
+    error?: string
+  }
+  if (!response.ok) throw new Error(data.error || `push-${response.status}`)
+  return data
 }

@@ -1,0 +1,7 @@
+# Segredos usados apenas por `npm run dev`. Nunca faça commit de .dev.vars.
+FIREBASE_PROJECT_ID=
+FIREBASE_WEB_API_KEY=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
