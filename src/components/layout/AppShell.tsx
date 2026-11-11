@@ -9,6 +9,7 @@ import { ensureCloudUser } from '../../lib/cloudSync'
 import { firebaseReady, initAnalytics } from '../../lib/firebase'
 import { useEffect } from 'react'
 import { useReminderRunner } from '../../hooks/useReminderRunner'
+import { NotificationCenter } from '../notifications/NotificationCenter'
 
 export function AppShell() {
   useReminderRunner()
@@ -25,6 +26,7 @@ export function AppShell() {
       <OfflineBanner />
       <AppUpdateBanner />
       <CloudSyncBadge />
+      <NotificationCenter />
       <div className="app-shell">
         <AppNav variant="side" />
         <main className="app-main">

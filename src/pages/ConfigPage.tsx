@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  Bell,
   CloudOff,
   Gauge,
   KeyRound,
@@ -8,6 +9,7 @@ import {
   Mail,
   Menu,
   Moon,
+  Palette,
   Phone,
   Sun,
   Timer,
@@ -28,6 +30,7 @@ import { firebaseReady } from '../lib/firebase'
 import { APP_VERSION_LABEL, appVersionHint } from '../lib/appVersion'
 
 type AuthTab = 'login' | 'register'
+type ConfigSection = 'general' | 'notifications' | 'account'
 
 export function ConfigPage() {
   const {
@@ -60,6 +63,7 @@ export function ConfigPage() {
   const instructorQuickMode = state.settings.instructorQuickMode
 
   const [tab, setTab] = useState<AuthTab>('login')
+  const [section, setSection] = useState<ConfigSection>('general')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -187,40 +191,83 @@ export function ConfigPage() {
         </span>
       </header>
 
-      {!firebaseReady && (
-        <div className="surface config-banner config-banner--warn">
-          Firebase não está configurado. Verifica o ficheiro .env.
-        </div>
+      <nav
+        className="config-section-tabs"
+        role="tablist"
+        aria-label="Secções das configurações"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={section === 'general'}
+          className={section === 'general' ? 'is-active' : ''}
+          onClick={() => setSection('general')}
+        >
+          <Palette size={17} />
+          Geral
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={section === 'notifications'}
+          className={section === 'notifications' ? 'is-active' : ''}
+          onClick={() => setSection('notifications')}
+        >
+          <Bell size={17} />
+          Notificações
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={section === 'account'}
+          className={section === 'account' ? 'is-active' : ''}
+          onClick={() => setSection('account')}
+        >
+          <UserRound size={17} />
+          Conta
+        </button>
+      </nav>
+
+      {section === 'account' && (
+        <>
+          {!firebaseReady && (
+            <div className="surface config-banner config-banner--warn">
+              Firebase não está configurado. Verifica o ficheiro .env.
+            </div>
+          )}
+
+          <section className="surface config-panel">
+            <div className="config-card__head">
+              <span className="config-avatar">
+                <UserRound size={22} />
+              </span>
+              <div>
+                <strong>
+                  {isRegistered
+                    ? profile?.displayName || 'Utilizador'
+                    : 'Convidado'}
+                </strong>
+                <span>
+                  {isRegistered
+                    ? profile?.email || user?.email
+                    : 'Entra para sincronizar entre dispositivos'}
+                </span>
+              </div>
+            </div>
+
+            {!online && (
+              <div className="config-sync-row">
+                <CloudOff size={14} />
+                <span>Offline — os dados ficam neste dispositivo</span>
+              </div>
+            )}
+          </section>
+        </>
       )}
 
-      <section className="surface config-panel">
-        <div className="config-card__head">
-          <span className="config-avatar">
-            <UserRound size={22} />
-          </span>
-          <div>
-            <strong>
-              {isRegistered
-                ? profile?.displayName || 'Utilizador'
-                : 'Convidado'}
-            </strong>
-            <span>
-              {isRegistered
-                ? profile?.email || user?.email
-                : 'Entra para sincronizar entre dispositivos'}
-            </span>
-          </div>
-        </div>
-
-        {!online && (
-          <div className="config-sync-row">
-            <CloudOff size={14} />
-            <span>Offline — os dados ficam neste dispositivo</span>
-          </div>
-        )}
-      </section>
-
-      <section className="surface config-panel" aria-label="Preferências">
+      {section === 'general' && (
+        <>
+      <section className="surface config-panel" aria-label="Aparência e treino">
         <h2 className="config-panel__title">Preferências</h2>
 
         <div className="config-theme__options" role="group" aria-label="Tema">
@@ -353,8 +400,6 @@ export function ConfigPage() {
         )}
       </section>
 
-      <NotificationSettings />
-
       <section className="surface config-panel" aria-label="Barra de menu">
         <h2 className="config-panel__title">Barra de menu</h2>
         <p className="config-theme__hint">
@@ -397,8 +442,13 @@ export function ConfigPage() {
           Repor padrão
         </button>
       </section>
+        </>
+      )}
 
-      {isRegistered ? (
+      {section === 'notifications' && <NotificationSettings />}
+
+      {section === 'account' && (
+        isRegistered ? (
         <form className="surface config-panel config-form" onSubmit={handleSaveProfile}>
           <h2 className="config-panel__title">Perfil</h2>
           <label className="plan-field">
@@ -569,6 +619,7 @@ export function ConfigPage() {
             </motion.form>
           </AnimatePresence>
         </section>
+      )
       )}
 
       <p className="config-build">{appVersionHint()}</p>

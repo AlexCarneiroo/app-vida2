@@ -5,6 +5,7 @@ import {
   type Notice,
   type NotifSettings,
 } from './notifSettings'
+import { addInboxNotice } from './notificationInbox'
 
 export {
   DEFAULT_NOTIF_SETTINGS,
@@ -143,6 +144,7 @@ export function needsIosInstall() {
  */
 export async function showNotice(notice: Notice): Promise<boolean> {
   if (currentPermission() !== 'granted') return false
+  void addInboxNotice(notice)
   const options: NotificationOptions = {
     body: notice.body,
     tag: notice.tag,

@@ -163,10 +163,12 @@ export async function dispatchForUser(
 
   for (const reminder of due) {
     const payload = JSON.stringify({
+      id: reminder.id,
       title: reminder.title,
       body: reminder.body,
       url: reminder.url ?? '/',
       tag: reminder.tag,
+      createdAt: instant.getTime(),
     })
     const results = await Promise.all(
       subs.map(async ([id, sub]) => ({ id, result: await deps.send(sub, payload) })),
