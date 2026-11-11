@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { PageTransition } from '../components/ui/PageTransition'
 import { ProgressRing } from '../components/ui/ProgressRing'
 import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
+import { DailyCoachCard } from '../components/insights/DailyCoachCard'
 import { useAuth } from '../hooks/useAuth'
 import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
@@ -30,6 +31,7 @@ import {
   treinoDayLog,
 } from '../lib/activityHeatmap'
 import { daysUntilBill } from '../lib/billStatus'
+import { buildDailyCoach } from '../lib/dailyCoach'
 import { dateKey, formatBRL, weekDates } from '../lib/date'
 
 /** Bom dia 5–11 · Boa tarde 12–17 · Boa noite 18–4 */
@@ -78,9 +80,9 @@ export function HomePage() {
     signals: saudeSignals,
     dueExams,
     sleepDebt,
-    poorSleepForTraining,
     state: saudeState,
     today: saudeToday,
+    todayCheckIn,
   } = useSaude()
   const { playsToday: jogosPlaysToday, streak: jogosStreak } = useJogos()
   const nutriLog = nutriState.dayLog ?? {}
@@ -358,12 +360,6 @@ export function HomePage() {
         ? `Exame a refazer: ${dueExams[0].name}.`
         : `${dueExams.length} exames próximos do prazo.`
     }
-    if (sleepDebt >= 4) {
-      return `Débito de sono ~${sleepDebt}h esta semana.`
-    }
-    if (poorSleepForTraining) {
-      return 'Sono curto ontem — treino leve se precisares.'
-    }
     const pendingMeds = saudeState.medications.filter(
       (m) => m.enabled && m.lastTakenDateKey !== saudeToday,
     )
@@ -375,11 +371,45 @@ export function HomePage() {
     return null
   }, [
     dueExams,
-    sleepDebt,
-    poorSleepForTraining,
     saudeState.medications,
     saudeToday,
   ])
+
+  const dailyCoach = useMemo(
+    () =>
+      buildDailyCoach({
+        hour: now.getHours(),
+        sleepHours: saudeSignals.sleepHours,
+        sleepDebtHours: sleepDebt,
+        waterMl: saudeSignals.waterMl,
+        waterGoalMl: saudeSignals.waterGoalMl,
+        kcal: todayMacros.kcal,
+        kcalGoal: nutriState.kcalGoal,
+        protein: todayMacros.protein,
+        proteinGoal: nutriState.proteinGoal,
+        energy: todayCheckIn?.energy ?? null,
+        symptoms: todayCheckIn?.symptoms,
+        workoutPlanned: Boolean(todayTemplate && !isTodayDone),
+        workoutActive: Boolean(state.active),
+        workoutDone: isTodayDone,
+        pendingHabits: dueToday.filter(
+          (habit) => !habit.doneToday && !habit.skippedToday,
+        ).length,
+      }),
+    [
+      now,
+      saudeSignals,
+      sleepDebt,
+      todayMacros,
+      nutriState.kcalGoal,
+      nutriState.proteinGoal,
+      todayCheckIn,
+      todayTemplate,
+      isTodayDone,
+      state.active,
+      dueToday,
+    ],
+  )
 
   const billsNote = useMemo(() => {
     if (billsOverdue.length > 0) {
@@ -502,6 +532,8 @@ export function HomePage() {
       </header>
 
       <p className="home-lead">{lead}</p>
+
+      <DailyCoachCard report={dailyCoach} />
 
       {notices.length > 0 && (
         <div className="home-notices">

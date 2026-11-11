@@ -115,7 +115,9 @@ export function useSaude() {
       waterGoalMl,
       waterOk: waterGoalMl > 0 && water >= waterGoalMl * 0.9,
       kcal: todayMacros.kcal,
+      kcalGoal: nutriState.kcalGoal,
       protein: todayMacros.protein,
+      proteinGoal: nutriState.proteinGoal,
       trainedToday: isTodayDone,
       sleepHours,
       sleepOk: sleepHours !== null && sleepHours >= 7 && sleepHours <= 9,
@@ -131,6 +133,8 @@ export function useSaude() {
   }, [
     water,
     nutriState.waterGoal,
+    nutriState.kcalGoal,
+    nutriState.proteinGoal,
     todayMacros,
     isTodayDone,
     sleepRef,

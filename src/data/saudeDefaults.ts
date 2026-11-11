@@ -311,7 +311,9 @@ export type VitalSignals = {
   waterGoalMl: number
   waterOk: boolean
   kcal: number
+  kcalGoal: number
   protein: number
+  proteinGoal: number
   trainedToday: boolean
   sleepHours: number | null
   sleepOk: boolean

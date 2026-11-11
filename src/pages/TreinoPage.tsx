@@ -29,6 +29,7 @@ import { PlanPresets } from '../components/treino/PlanPresets'
 import { ProgressionPanel } from '../components/treino/ProgressionPanel'
 import { RestTimer } from '../components/treino/RestTimer'
 import { WorkoutSummaryCard } from '../components/treino/WorkoutSummaryCard'
+import { DailyCoachCard } from '../components/insights/DailyCoachCard'
 import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { Button } from '../components/ui/Button'
 import {
@@ -42,6 +43,7 @@ import { useBusyAction } from '../hooks/useBusyAction'
 import { getPresetById } from '../data/planPresets'
 import { DAY_LABELS, DAY_NAMES, clonePlan } from '../data/treinoDefaults'
 import { treinoDayLog } from '../lib/activityHeatmap'
+import { buildDailyCoach } from '../lib/dailyCoach'
 import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
 import { dateKey, weekDates } from '../lib/date'
@@ -112,7 +114,11 @@ export function TreinoPage() {
     updateSavedPlanFromCurrent,
     stats,
   } = useTreino()
-  const { poorSleepForTraining, lastNightSleep } = useSaude()
+  const {
+    signals: healthSignals,
+    sleepDebt,
+    todayCheckIn,
+  } = useSaude()
 
   const { toast } = useToast()
   const { confirm } = useConfirm()
@@ -198,6 +204,38 @@ export function TreinoPage() {
     currentSavedPlan?.name ||
     currentPreset?.name ||
     'Plano personalizado'
+
+  const dailyCoach = useMemo(
+    () =>
+      buildDailyCoach({
+        hour: new Date().getHours(),
+        sleepHours: healthSignals.sleepHours,
+        sleepDebtHours: sleepDebt,
+        waterMl: healthSignals.waterMl,
+        waterGoalMl: healthSignals.waterGoalMl,
+        kcal: healthSignals.kcal,
+        kcalGoal: healthSignals.kcalGoal,
+        protein: healthSignals.protein,
+        proteinGoal: healthSignals.proteinGoal,
+        energy: todayCheckIn?.energy ?? null,
+        symptoms: todayCheckIn?.symptoms,
+        workoutPlanned: Boolean(todayTemplate && !isTodayDone),
+        workoutActive: Boolean(state.active),
+        workoutDone: isTodayDone,
+        pendingHabits: Math.max(
+          0,
+          healthSignals.healthHabitsTotal - healthSignals.healthHabitsDone,
+        ),
+      }),
+    [
+      healthSignals,
+      sleepDebt,
+      todayCheckIn,
+      todayTemplate,
+      isTodayDone,
+      state.active,
+    ],
+  )
 
   const selectedDay = useMemo(
     () => days.find((d) => dateKey(d) === selectedDayKey) ?? days.find((d) => dateKey(d) === todayKey) ?? days[0],
@@ -360,6 +398,15 @@ export function TreinoPage() {
         message: `Tens a certeza que queres fazer o treino de ${planned} na ${actual}?`,
         confirmLabel: 'Sim, iniciar',
         cancelLabel: 'Cancelar',
+      })
+      if (!ok) return
+    }
+    if (dailyCoach.tone === 'recover') {
+      const ok = await confirm({
+        title: dailyCoach.title,
+        message: `${dailyCoach.summary} ${dailyCoach.actions[0]?.text ?? 'Reduz a intensidade e presta atenção a como te sentes.'}`,
+        confirmLabel: 'Iniciar com cuidado',
+        cancelLabel: 'Agora não',
       })
       if (!ok) return
     }
@@ -563,19 +610,7 @@ export function TreinoPage() {
 
       {showHome && (
         <>
-          {poorSleepForTraining && (
-            <aside className="surface treino-sleep-hint" aria-label="Aviso de sono">
-              <Moon size={16} aria-hidden />
-              <div>
-                <strong>Sono curto ontem</strong>
-                <span>
-                  {lastNightSleep
-                    ? `${lastNightSleep.hours}h — aquecimento extra ou volume reduzido.`
-                    : 'Considera aquecimento extra ou volume reduzido.'}
-                </span>
-              </div>
-            </aside>
-          )}
+          <DailyCoachCard report={dailyCoach} compact />
           {active && (
             <button
               type="button"

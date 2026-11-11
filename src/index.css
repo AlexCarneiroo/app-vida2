@@ -6300,6 +6300,158 @@ button.activity-map__cell:focus-visible {
   line-height: 1.45;
 }
 
+.daily-coach {
+  --coach-color: var(--jade);
+  margin-top: 1rem;
+  padding: 1rem;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--coach-color) 24%, transparent);
+  background:
+    radial-gradient(
+      circle at 100% 0,
+      color-mix(in srgb, var(--coach-color) 14%, transparent),
+      transparent 44%
+    ),
+    var(--surface);
+}
+
+.daily-coach--attention {
+  --coach-color: #d89d38;
+}
+
+.daily-coach--recover {
+  --coach-color: #df765f;
+}
+
+.daily-coach__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.daily-coach__icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 12px;
+  color: var(--coach-color);
+  background: color-mix(in srgb, var(--coach-color) 16%, transparent);
+}
+
+.daily-coach__head h2 {
+  margin: 0.1rem 0 0.25rem;
+  color: var(--ink);
+  font-size: 1.08rem;
+  letter-spacing: -0.025em;
+}
+
+.daily-coach__head > div > span {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.daily-coach__signals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.daily-coach__signal {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid rgba(var(--ink-rgb), 0.07);
+  border-radius: 11px;
+  color: var(--ink-muted);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.daily-coach__signal.is-ok {
+  color: var(--jade);
+}
+
+.daily-coach__signal.is-warn {
+  color: var(--coach-color);
+}
+
+.daily-coach__signal > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.daily-coach__signal small {
+  color: var(--ink-faint);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.daily-coach__signal strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.73rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-coach__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.daily-coach__action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.62rem 0.7rem;
+  border-radius: 11px;
+  color: var(--ink);
+  background: rgba(var(--ink-rgb), 0.035);
+  text-decoration: none;
+}
+
+.daily-coach__action > span {
+  font-size: 0.78rem;
+  line-height: 1.38;
+}
+
+.daily-coach__action > strong {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.1rem;
+  color: var(--coach-color);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.daily-coach.is-compact {
+  margin: 0 0 0.9rem;
+}
+
+.daily-coach.is-compact .daily-coach__actions {
+  margin-top: 0.6rem;
+}
+
+@media (min-width: 720px) {
+  .daily-coach__signals {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .home-notices {
   display: flex;
   flex-direction: column;
