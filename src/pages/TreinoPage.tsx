@@ -71,6 +71,8 @@ export function TreinoPage() {
     todayKey,
     todayTemplate,
     isTodayDone,
+    isTodayPlanDone,
+    todayCompletedSession,
     plan,
     progression,
     lastSummary,
@@ -1016,9 +1018,17 @@ export function TreinoPage() {
                       <Trophy size={26} />
                     </div>
                     <div>
-                      <h2>Treino de hoje concluído</h2>
+                      <h2>
+                        {todayCompletedSession
+                          ? `${todayCompletedSession.name} concluído`
+                          : 'Treino de hoje concluído'}
+                      </h2>
                       <p>
-                        Cargas salvas no plano — amanhã já vêm pré-preenchidas.
+                        {todayTemplate &&
+                        todayCompletedSession &&
+                        !isTodayPlanDone
+                          ? `Fizeste ${todayCompletedSession.name}. O plano de hoje era ${todayTemplate.name}.`
+                          : 'Cargas salvas no plano — amanhã já vêm pré-preenchidas.'}
                       </p>
                     </div>
                     {todayTemplate && (
@@ -1028,7 +1038,7 @@ export function TreinoPage() {
                         onClick={() => requestStart(todayTemplate)}
                       >
                         <RotateCcw size={16} />
-                        Refazer
+                        {isTodayPlanDone ? 'Refazer' : 'Fazer o de hoje'}
                       </button>
                     )}
                   </div>

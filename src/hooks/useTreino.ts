@@ -461,6 +461,31 @@ export function useTreino() {
 
   const isTodayDone = Boolean(state.weekDone[todayKey])
 
+  /** Sessão realmente concluída hoje (não o treino previsto no plano). */
+  const todayCompletedSession = useMemo(() => {
+    const fromHistory = state.history.find(
+      (session) => session.dateKey === todayKey && Boolean(session.completedAt),
+    )
+    if (fromHistory) return fromHistory
+    const doneId = state.weekDone[todayKey]
+    if (!doneId) return null
+    const template = plan.find((t) => t.id === doneId)
+    if (!template) return null
+    return {
+      dateKey: todayKey,
+      templateId: template.id,
+      name: template.name,
+      focus: template.focus,
+      startedAt: '',
+      completedAt: '',
+      exercises: [],
+    }
+  }, [state.history, state.weekDone, todayKey, plan])
+
+  const isTodayPlanDone = Boolean(
+    todayTemplate && state.weekDone[todayKey] === todayTemplate.id,
+  )
+
   const startWorkout = useCallback((template: WorkoutTemplate) => {
     setLastSummary(null)
     setState((prev) => ({
@@ -1289,6 +1314,8 @@ export function useTreino() {
     todayKey,
     todayTemplate,
     isTodayDone,
+    isTodayPlanDone,
+    todayCompletedSession,
     plan,
     progression,
     lastSummary,

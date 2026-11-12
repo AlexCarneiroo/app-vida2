@@ -49,6 +49,8 @@ export function HomePage() {
   const {
     todayTemplate,
     isTodayDone,
+    isTodayPlanDone,
+    todayCompletedSession,
     state,
     stats,
     plan,
@@ -197,7 +199,9 @@ export function HomePage() {
         desc: state.active
           ? 'Sessão em andamento'
           : isTodayDone
-            ? 'Concluído hoje'
+            ? todayCompletedSession
+              ? `Feito: ${todayCompletedSession.name}`
+              : 'Concluído hoje'
             : todayTemplate
               ? todayTemplate.name
               : 'Sem plano hoje',
@@ -305,6 +309,7 @@ export function HomePage() {
     [
       treinoMeta,
       isTodayDone,
+      todayCompletedSession,
       todayTemplate,
       state.active,
       monthLabel,
@@ -570,7 +575,7 @@ export function HomePage() {
         </div>
       )}
 
-      {(todayTemplate || state.active) && (
+      {(todayTemplate || state.active || isTodayDone) && (
         <Link to="/treino" className="surface surface--interactive home-treino-card">
           <span
             className="module-card__icon"
@@ -590,18 +595,30 @@ export function HomePage() {
               {state.active
                 ? 'Em andamento'
                 : isTodayDone
-                  ? 'Concluído'
+                  ? isTodayPlanDone
+                    ? 'Concluído'
+                    : 'Treino feito hoje'
                   : 'Treino de hoje'}
             </p>
             <strong>
-              {state.active?.name ?? todayTemplate?.name ?? 'Treino'}
+              {state.active?.name ??
+                todayCompletedSession?.name ??
+                todayTemplate?.name ??
+                'Treino'}
             </strong>
             <span>
               {state.active
                 ? `${stats.doneSets}/${stats.totalSets} séries · ${stats.progress}%`
-                : todayTemplate
-                  ? `~${todayTemplate.estimatedMin} min · ${todayTemplate.exercises.length} exercícios`
-                  : ''}
+                : isTodayDone &&
+                    todayTemplate &&
+                    todayCompletedSession &&
+                    !isTodayPlanDone
+                  ? `Plano de hoje era ${todayTemplate.name}`
+                  : todayTemplate
+                    ? `~${todayTemplate.estimatedMin} min · ${todayTemplate.exercises.length} exercícios`
+                    : isTodayDone
+                      ? 'Sessão registada'
+                      : ''}
             </span>
           </div>
           <ProgressRing
