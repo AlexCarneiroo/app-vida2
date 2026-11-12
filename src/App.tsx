@@ -26,6 +26,9 @@ const HabitosPage = lazy(() =>
 const RotinaPage = lazy(() =>
   import('./pages/RotinaPage').then((m) => ({ default: m.RotinaPage })),
 )
+const AgendaPage = lazy(() =>
+  import('./pages/AgendaPage').then((m) => ({ default: m.AgendaPage })),
+)
 const NutricaoPage = lazy(() =>
   import('./pages/NutricaoPage').then((m) => ({ default: m.NutricaoPage })),
 )
@@ -88,6 +91,14 @@ function AnimatedRoutes() {
             element={
               <Suspense fallback={<RouteFallback />}>
                 <RotinaPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="agenda"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AgendaPage />
               </Suspense>
             }
           />

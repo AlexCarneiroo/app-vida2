@@ -6,6 +6,7 @@ export type NavPageId =
   | 'financas'
   | 'habitos'
   | 'rotina'
+  | 'agenda'
   | 'nutricao'
   | 'saude'
   | 'jogos'
@@ -25,6 +26,7 @@ export const NAV_PAGES: NavPage[] = [
   { id: 'financas', to: '/financas', label: 'Finanças' },
   { id: 'habitos', to: '/habitos', label: 'Hábitos' },
   { id: 'rotina', to: '/rotina', label: 'Rotina' },
+  { id: 'agenda', to: '/agenda', label: 'Agenda' },
   { id: 'nutricao', to: '/nutricao', label: 'Nutrição' },
   { id: 'saude', to: '/saude', label: 'Saúde' },
   { id: 'jogos', to: '/jogos', label: 'Jogos' },

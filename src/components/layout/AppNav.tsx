@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity,
   BarChart3,
+  CalendarDays,
   Dumbbell,
   Gamepad2,
   LayoutDashboard,
@@ -24,6 +25,7 @@ const ICONS: Record<NavPageId, typeof LayoutDashboard> = {
   financas: PiggyBank,
   habitos: Sparkles,
   rotina: Repeat,
+  agenda: CalendarDays,
   nutricao: UtensilsCrossed,
   saude: Activity,
   jogos: Gamepad2,

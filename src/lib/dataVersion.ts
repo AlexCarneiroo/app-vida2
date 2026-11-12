@@ -15,6 +15,7 @@ export type CloudCollection =
   | 'nutricao'
   | 'saude'
   | 'jogos'
+  | 'agenda'
 
 export function isPersistedDoc(value: unknown): value is PersistedDoc<unknown> {
   return Boolean(

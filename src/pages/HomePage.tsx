@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import {
   Activity,
+  CalendarDays,
   Check,
   Dumbbell,
   Gamepad2,
@@ -19,10 +20,12 @@ import { useAuth } from '../hooks/useAuth'
 import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
 import { useNutricao } from '../hooks/useNutricao'
+import { useAgenda } from '../hooks/useAgenda'
 import { useRotina } from '../hooks/useRotina'
 import { useJogos } from '../hooks/useJogos'
 import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
+import { expandEvents } from '../lib/agendaEngine'
 import { coachLine } from '../hooks/useMotivation'
 import { buildInstructorHomeNote } from '../components/treino/InstructorHomeNote'
 import {
@@ -66,6 +69,7 @@ export function HomePage() {
     toggleBlock,
     dayLog: rotinaLog,
   } = useRotina()
+  const { events: agendaEvents, categories: agendaCategories } = useAgenda()
   const {
     stats: financeStats,
     monthTransactions,
@@ -112,6 +116,11 @@ export function HomePage() {
       window.removeEventListener('focus', onFocus)
     }
   }, [])
+
+  const todayAgendaCount = useMemo(() => {
+    const key = dateKey(now)
+    return expandEvents(agendaEvents, key, key, agendaCategories).length
+  }, [agendaEvents, agendaCategories, now])
 
   const greet = greetingForHour(now.getHours())
 
@@ -239,6 +248,20 @@ export function HomePage() {
         iconFg: 'var(--rotina)',
       },
       {
+        to: '/agenda',
+        title: 'Agenda',
+        desc:
+          todayAgendaCount > 0
+            ? `${todayAgendaCount} no calendário hoje`
+            : 'Organiza o teu dia',
+        meta: todayAgendaCount > 0 ? `${todayAgendaCount}` : '—',
+        progress: todayAgendaCount > 0 ? Math.min(100, todayAgendaCount * 20) : 0,
+        icon: CalendarDays,
+        bar: '#5b8def',
+        iconBg: 'rgba(91, 141, 239, 0.16)',
+        iconFg: '#5b8def',
+      },
+      {
         to: '/nutricao',
         title: 'Nutrição',
         desc:
@@ -294,6 +317,7 @@ export function HomePage() {
       coveredCount,
       rotinaTotal,
       rotinaDone,
+      todayAgendaCount,
       todayMacros,
       nutriGoal,
       saudeScore,

@@ -7,6 +7,7 @@ import {
 import { type CloudCollection, type PersistedDoc } from '../lib/dataVersion'
 import { touchPersisted } from '../lib/persist'
 import { useAuth } from './useAuth'
+import type { AgendaState } from '../types/agenda'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
 import type { JogosState } from '../types/jogos'
@@ -23,6 +24,7 @@ type AppModuleState =
   | NutricaoState
   | SaudeState
   | JogosState
+  | AgendaState
 
 type Options<T extends AppModuleState> = {
   collection: CloudCollection

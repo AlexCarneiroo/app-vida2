@@ -13,6 +13,7 @@ import {
 } from '../data/nutricaoDefaults'
 import { emptyJogosState } from '../data/jogosDefaults'
 import { defaultWeeklyGoals, normalizeSex } from '../data/saudeDefaults'
+import { normalizeAgendaState } from '../data/agendaDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
 import { exercisesForMuscle } from '../data/exerciseLibrary'
 import { normalizeExerciseName } from './treinoStats'
@@ -41,6 +42,11 @@ import type {
   Weekday,
 } from '../types/nutricao'
 import type { GameBest, GameSession, JogosState } from '../types/jogos'
+import type {
+  AgendaEvent,
+  AgendaState,
+  AvailabilityException,
+} from '../types/agenda'
 import type { RotinaState, RoutineBlock } from '../types/rotina'
 import type {
   BodyMetric,
@@ -1320,5 +1326,53 @@ export function mergeJogosSafe(
     sessions,
     bestByGame: [...bestMap.values()],
     totalMinutes: Math.max(local.totalMinutes, remote.totalMinutes),
+  }
+}
+
+export function migrateAgendaDoc(input: unknown): PersistedDoc<AgendaState> {
+  return migrateEnvelope(
+    input,
+    normalizeAgendaState,
+    (o) => 'events' in o || 'weeklyAvailability' in o || 'categories' in o,
+  )
+}
+
+export function mergeAgendaSafe(
+  local: AgendaState,
+  remote: AgendaState,
+  preferRemote: boolean,
+): AgendaState {
+  const events = mergeById(
+    local.events,
+    remote.events,
+    preferRemote,
+  ).slice(0, 500) as AgendaEvent[]
+
+  const catMap = new Map<string, AgendaState['categories'][number]>()
+  const catsPrimary = preferRemote ? remote.categories : local.categories
+  const catsSecondary = preferRemote ? local.categories : remote.categories
+  for (const c of catsSecondary) catMap.set(c.id, c)
+  for (const c of catsPrimary) catMap.set(c.id, c)
+
+  const exceptions = mergeById(
+    local.exceptions,
+    remote.exceptions,
+    preferRemote,
+  ).slice(0, 200) as AvailabilityException[]
+
+  const weekly =
+    preferRemote && remote.weeklyAvailability.length === 7
+      ? remote.weeklyAvailability
+      : local.weeklyAvailability.length === 7
+        ? local.weeklyAvailability
+        : remote.weeklyAvailability
+
+  return {
+    events,
+    categories: [...catMap.values()],
+    weeklyAvailability: weekly,
+    exceptions,
+    sleepStart: preferRemote ? remote.sleepStart : local.sleepStart,
+    sleepEnd: preferRemote ? remote.sleepEnd : local.sleepEnd,
   }
 }
