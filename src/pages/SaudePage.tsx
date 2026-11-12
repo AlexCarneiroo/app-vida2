@@ -1,46 +1,43 @@
-import { motion } from 'framer-motion'
 import {
   Activity,
-  Camera,
-  ClipboardList,
-  Droplets,
   FileDown,
-  FlaskConical,
-  Moon,
-  Pill,
-  Plus,
-  Scale,
-  Stethoscope,
-  Trash2,
 } from 'lucide-react'
 import {
   useMemo,
   useState,
   type FormEvent,
-  type ReactNode,
 } from 'react'
-import { Link } from 'react-router-dom'
-import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
-import { Button } from '../components/ui/Button'
-import { useBusyAction } from '../hooks/useBusyAction'
-import { useConfirm, useToast } from '../components/ui/Feedback'
+import { SaudeBodyTab } from '../components/saude/SaudeBodyTab'
+import { SaudeCareTab } from '../components/saude/SaudeCareTab'
+import { SaudeExamsTab } from '../components/saude/SaudeExamsTab'
+import { SaudeOverviewTab } from '../components/saude/SaudeOverviewTab'
+import { SleepModule } from '../components/saude/SleepModule'
+import { emptySleepHabits } from '../data/saudeDefaults'
 import {
-  PageTransition,
-  staggerContainer,
-  staggerItem,
-} from '../components/ui/PageTransition'
+  PanelActions,
+  QualityField,
+  Sparkline,
+  sparkPoints,
+} from '../components/saude/SaudeShared'
+import {
+  SaudeTabNav,
+  type SaudeTabId,
+} from '../components/saude/SaudeTabNav'
+import { Button } from '../components/ui/Button'
+import { useConfirm, useToast } from '../components/ui/Feedback'
 import { PageHeader, PageScreens } from '../components/ui/PageShell'
-import { ProgressRing } from '../components/ui/ProgressRing'
+import { PageTransition } from '../components/ui/PageTransition'
 import {
   compressImageFile,
   EXAM_IDEAS,
   sleepHoursBetween,
   VITAL_QUICK,
 } from '../data/saudeDefaults'
+import { useBusyAction } from '../hooks/useBusyAction'
 import { useSaude } from '../hooks/useSaude'
 import { dateKey } from '../lib/date'
 import { exportHealthPdf } from '../lib/saudeExport'
-import type { BodySex, SleepQuality } from '../types/saude'
+import type { BodySex, SleepHabitFlags, SleepQuality } from '../types/saude'
 
 type View =
   | 'home'
@@ -52,8 +49,6 @@ type View =
   | 'photos'
   | 'consult'
   | 'goals'
-
-const QUALITY: SleepQuality[] = [1, 2, 3, 4, 5]
 
 export function SaudePage() {
   const saude = useSaude()
@@ -75,10 +70,17 @@ export function SaudePage() {
     moodLog,
     exams,
     todayCheckIn,
+    napsToday,
     setProfile,
     addWeight,
     removeMetric,
     upsertSleep,
+    removeSleep,
+    addNap,
+    removeNap,
+    toggleRoutineItem,
+    beginSleepChallenge,
+    clearSleepChallenge,
     addExam,
     removeExam,
     upsertCheckIn,
@@ -97,6 +99,7 @@ export function SaudePage() {
   const { busy: photoBusy, run: runPhoto } = useBusyAction()
 
   const [view, setView] = useState<View>('home')
+  const [tab, setTab] = useState<SaudeTabId>('visao')
   const onPanel = view !== 'home'
 
   const [heightDraft, setHeightDraft] = useState('')
@@ -109,6 +112,13 @@ export function SaudePage() {
 
   const [sleepHours, setSleepHours] = useState('7.5')
   const [sleepQuality, setSleepQuality] = useState<SleepQuality>(3)
+  const [sleepReadiness, setSleepReadiness] = useState<SleepQuality>(3)
+  const [sleepNote, setSleepNote] = useState('')
+  const [sleepLatency, setSleepLatency] = useState('15')
+  const [sleepAwakenings, setSleepAwakenings] = useState('0')
+  const [sleepHabits, setSleepHabits] = useState<SleepHabitFlags>(() =>
+    emptySleepHabits(),
+  )
   const [bedTime, setBedTime] = useState('22:30')
   const [wakeTime, setWakeTime] = useState('06:30')
 
@@ -152,11 +162,11 @@ export function SaudePage() {
   const titles: Record<View, { title: string; sub: string }> = {
     home: {
       title: 'Saúde',
-      sub: 'Vitalidade, consultório, exames, sono e corpo.',
+      sub: 'Painel pessoal de vitalidade, sono, corpo e exames.',
     },
     body: { title: 'Corpo & IMC', sub: 'Peso, medidas e meta.' },
-    sleep: { title: 'Sono', sub: 'Horas, horários e lembrete.' },
-    exam: { title: 'Exames', sub: 'Resultados, gráficos e anexos.' },
+    sleep: { title: 'Registar sono', sub: 'Horários, qualidade e disposição.' },
+    exam: { title: 'Novo exame', sub: 'Resultado, referência e anexo.' },
     checkin: { title: 'Check-in', sub: 'Energia, humor e sintomas.' },
     meds: { title: 'Medicação', sub: 'Suplementos e horários.' },
     photos: { title: 'Fotos', sub: 'Progresso privado no dispositivo.' },
@@ -199,9 +209,27 @@ export function SaudePage() {
           : '7.5',
     )
     setSleepQuality(tonightSleep?.quality ?? 3)
+    setSleepReadiness(tonightSleep?.readiness ?? 3)
+    setSleepNote(tonightSleep?.note ?? '')
+    setSleepLatency(
+      tonightSleep?.latencyMin != null ? String(tonightSleep.latencyMin) : '15',
+    )
+    setSleepAwakenings(
+      tonightSleep?.awakenings != null ? String(tonightSleep.awakenings) : '0',
+    )
+    setSleepHabits({
+      ...emptySleepHabits(),
+      ...(tonightSleep?.habits ?? {}),
+    })
     setBedTime(bed)
     setWakeTime(wake)
+    setTab('sono')
     setView('sleep')
+  }
+
+  function goHomeTab(next: SaudeTabId) {
+    setTab(next)
+    setView('home')
   }
 
   function handleExport() {
@@ -238,7 +266,10 @@ export function SaudePage() {
             <Button
               variant="primary"
               icon={<Activity size={16} />}
-              onClick={() => setView('checkin')}
+              onClick={() => {
+                setTab('cuidado')
+                setView('checkin')
+              }}
             >
               Check-in
             </Button>
@@ -250,286 +281,137 @@ export function SaudePage() {
         mode={view}
         home={
           <div className="saude-home">
-            <section className="surface saude-hero">
-              <div className="saude-hero__ring">
-                <ProgressRing value={score} color="var(--saude)" size={96} />
-              </div>
-              <div>
-                <p className="page-kicker">Score vitalidade</p>
-                <strong className="saude-hero__score">{score}</strong>
-                <p className="saude-hero__hint">
-                  Água {signals.waterWeekDays}/{signals.weeklyGoals.waterDaysTarget}d
-                  · Sono {signals.sleepWeekDays}/
-                  {signals.weeklyGoals.sleepDaysTarget}d
-                  {sleepDebt > 0 ? ` · débito ~${sleepDebt}h` : ''}
-                </p>
-              </div>
-            </section>
+            <SaudeTabNav active={tab} onChange={setTab} />
 
-            <section className="surface saude-combo">
-              <Droplets size={16} />
-              <div>
-                <strong>Nutrição do dia</strong>
-                <span>
-                  {signals.kcal} kcal · {Math.round(signals.protein)} g prot ·{' '}
-                  {signals.waterMl}/{signals.waterGoalMl} ml água
-                </span>
-              </div>
-              <Link to="/nutricao" className="saude-signal__link">
-                Abrir
-              </Link>
-            </section>
-
-            <section className="surface saude-doc">
-              <div className="saude-doc__head">
-                <span className="saude-doc__avatar" aria-hidden>
-                  <Stethoscope size={18} />
-                </span>
-                <div>
-                  <p className="page-kicker">Consultório</p>
-                  <strong>Dra. Pulse</strong>
-                  <span>Insights do dia e da semana</span>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  onClick={() => setView('consult')}
-                >
-                  Consulta
-                </button>
-              </div>
-              <ul className="saude-insights">
-                {[...weeklyInsights, ...insights].slice(0, 6).map((ins) => (
-                  <li key={ins.id} className={`saude-insight is-${ins.tone}`}>
-                    <strong>{ins.title}</strong>
-                    <p>{ins.body}</p>
-                  </li>
-                ))}
-              </ul>
-              {state.lastConsult && (
-                <div className="saude-consult-plan">
-                  <strong>Plano da última consulta</strong>
-                  <ul>
-                    {state.lastConsult.plan.map((p) => (
-                      <li key={p}>{p}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-
-            {dueExams.length > 0 && (
-              <section className="surface saude-due">
-                <FlaskConical size={16} />
-                <div>
-                  <strong>Exames a refazer</strong>
-                  <span>
-                    {dueExams
-                      .slice(0, 2)
-                      .map((e) => `${e.name} (${e.nextDueDateKey})`)
-                      .join(' · ')}
-                  </span>
-                </div>
-              </section>
+            {tab === 'visao' && (
+              <SaudeOverviewTab
+                score={score}
+                signals={signals}
+                sleepDebt={sleepDebt}
+                insights={insights}
+                weeklyInsights={weeklyInsights}
+                dueExams={dueExams}
+                lastConsult={state.lastConsult}
+                lastWeightKg={lastWeight?.weightKg ?? null}
+                projectionWeeks={projectionWeeks}
+                weightSpark={spark}
+                moodLog={moodLog}
+                todayCheckIn={todayCheckIn}
+                onOpenSleep={openSleep}
+                onOpenBody={() => {
+                  setTab('corpo')
+                  openBody()
+                }}
+                onOpenExams={() => goHomeTab('exames')}
+                onOpenConsult={() => {
+                  setTab('cuidado')
+                  setView('consult')
+                }}
+                onOpenCheckin={() => {
+                  setTab('cuidado')
+                  setView('checkin')
+                }}
+              />
             )}
 
-            <motion.div
-              className="saude-signals"
-              variants={staggerContainer}
-              initial="hidden"
-              animate="show"
-            >
-              <SignalCard
-                icon={<Droplets size={16} />}
-                title="Água"
-                text={`${signals.waterMl}/${signals.waterGoalMl} ml`}
-                ok={signals.waterOk}
-                action={<Link to="/nutricao">Abrir</Link>}
+            {tab === 'sono' && (
+              <SleepModule
+                today={saude.today}
+                sleep={state.sleep}
+                tonightSleep={tonightSleep}
+                sleepWeek={sleepWeek}
+                sleepDebt={sleepDebt}
+                sleepGoalHours={state.sleepGoalHours || 8}
+                sleepGoalBedTime={state.sleepGoalBedTime || '22:30'}
+                sleepGoalWakeTime={state.sleepGoalWakeTime || '06:30'}
+                reminderEnabled={state.sleepReminderEnabled}
+                reminderTime={state.sleepReminderTime}
+                windDownEnabled={state.windDownEnabled !== false}
+                windDownMinutes={state.windDownMinutes || 45}
+                weeklySleepTarget={state.weeklyGoals.sleepDaysTarget}
+                sleepWeekDays={signals.sleepWeekDays}
+                sleepRoutine={state.sleepRoutine ?? []}
+                sleepRoutineDone={state.sleepRoutineDone ?? {}}
+                sleepChallenge={state.sleepChallenge}
+                naps={state.naps ?? []}
+                napsToday={napsToday}
+                onRegister={openSleep}
+                onOpenGoals={() => setView('goals')}
+                onRemoveSleep={removeSleep}
+                onAddNap={addNap}
+                onRemoveNap={removeNap}
+                onToggleRoutine={toggleRoutineItem}
+                onBeginChallenge={beginSleepChallenge}
+                onClearChallenge={clearSleepChallenge}
+                onSetGoals={setProfile}
               />
-              <SignalCard
-                icon={<Moon size={16} />}
-                title="Sono"
-                text={
-                  signals.sleepHours !== null
-                    ? `${signals.sleepHours}h`
-                    : 'Sem registo'
+            )}
+
+            {tab === 'corpo' && (
+              <SaudeBodyTab
+                heightCm={state.heightCm}
+                imc={imc}
+                imcLabel={imcLabel}
+                lastWeight={lastWeight}
+                weightGoalKg={state.weightGoalKg}
+                projectionWeeks={projectionWeeks}
+                weightSpark={spark}
+                metrics={state.metrics}
+                photos={state.photos}
+                onOpenBody={openBody}
+                onOpenPhotos={() => setView('photos')}
+                onRemoveMetric={(id) => {
+                  removeMetric(id)
+                  toast('Removido', 'info')
+                }}
+              />
+            )}
+
+            {tab === 'exames' && (
+              <SaudeExamsTab
+                exams={exams}
+                dueExams={dueExams}
+                chartName={
+                  exams.some((e) => e.name === chartName)
+                    ? chartName
+                    : exams[0]?.name || chartName
                 }
-                ok={signals.sleepOk}
-                action={
-                  <button type="button" onClick={openSleep}>
-                    Registar
-                  </button>
-                }
+                chartSpark={chartSpark}
+                chartCount={chart.length}
+                onChartName={setChartName}
+                onAdd={() => setView('exam')}
+                onRemove={(id) => {
+                  void confirm({
+                    title: 'Remover exame?',
+                    message: 'O registo será apagado.',
+                  }).then((ok) => {
+                    if (!ok) return
+                    removeExam(id)
+                    toast('Exame removido', 'info')
+                  })
+                }}
               />
-              <SignalCard
-                icon={<Activity size={16} />}
-                title="Treino"
-                text={signals.trainedToday ? 'Feito' : 'Por fazer'}
-                ok={signals.trainedToday}
-                action={<Link to="/treino">Abrir</Link>}
-              />
-              <SignalCard
-                icon={<Scale size={16} />}
-                title="IMC"
-                text={imc !== null ? `${imc}` : 'Definir'}
-                ok={signals.imcOk}
-                action={
-                  <button type="button" onClick={openBody}>
-                    Corpo
-                  </button>
-                }
-              />
-            </motion.div>
-
-            <div className="section-label">
-              <h2>Atalhos</h2>
-            </div>
-            <div className="saude-actions">
-              {(
-                [
-                  ['body', Scale, 'Corpo'],
-                  ['sleep', Moon, 'Sono'],
-                  ['exam', FlaskConical, 'Exames'],
-                  ['meds', Pill, 'Meds'],
-                  ['photos', Camera, 'Fotos'],
-                  ['consult', ClipboardList, 'Consulta'],
-                  ['goals', Stethoscope, 'Metas'],
-                  ['checkin', Activity, 'Check-in'],
-                ] as const
-              ).map(([id, Icon, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className="surface saude-action"
-                  onClick={() =>
-                    id === 'body'
-                      ? openBody()
-                      : id === 'sleep'
-                        ? openSleep()
-                        : setView(id)
-                  }
-                >
-                  <Icon size={18} />
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {state.medications.length > 0 && (
-              <section className="surface saude-meds-today">
-                <strong>Medicação de hoje</strong>
-                <ul>
-                  {state.medications
-                    .filter((m) => m.enabled)
-                    .map((m) => (
-                      <li key={m.id}>
-                        <button
-                          type="button"
-                          className={`saude-med-check${m.lastTakenDateKey === saude.today ? ' is-done' : ''}`}
-                          onClick={() => toggleMedTaken(m.id)}
-                        >
-                          {m.time} · {m.name}
-                          {m.dose ? ` · ${m.dose}` : ''}
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              </section>
             )}
 
-            {spark && (
-              <section className="surface saude-trend">
-                <div className="saude-trend__head">
-                  <strong>Peso</strong>
-                  <span>
-                    {lastWeight ? `${lastWeight.weightKg} kg` : '—'}
-                    {projectionWeeks
-                      ? ` · ~${projectionWeeks} sem. até meta`
-                      : ''}
-                  </span>
-                </div>
-                <Sparkline points={spark} />
-              </section>
-            )}
-
-            <section className="surface saude-sleep-week">
-              <strong>Sono · 7 dias</strong>
-              <div className="saude-sleep-bars">
-                {sleepWeek.map((d) => (
-                  <div key={d.dateKey} className="saude-sleep-bar">
-                    <i
-                      style={{
-                        height: `${Math.min(100, (d.hours / 9) * 100)}%`,
-                      }}
-                    />
-                    <em>{d.dateKey.slice(8)}</em>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <ActivityHeatmap
-              log={moodLog}
-              range="month"
-              title="Humor do mês"
-            />
-
-            {exams.length > 0 && (
-              <>
-                <div className="section-label">
-                  <h2>Exames</h2>
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    onClick={() => setView('exam')}
-                  >
-                    <Plus size={14} />
-                    Novo
-                  </button>
-                </div>
-                <div className="saude-exams">
-                  {exams.slice(0, 5).map((ex) => (
-                    <article key={ex.id} className="surface saude-exam">
-                      <div>
-                        <strong>{ex.name}</strong>
-                        <span>
-                          {ex.dateKey.slice(8)}/{ex.dateKey.slice(5, 7)}
-                          {ex.nextDueDateKey
-                            ? ` · refazer ${ex.nextDueDateKey.slice(8)}/${ex.nextDueDateKey.slice(5, 7)}`
-                            : ''}
-                          {ex.attachmentName ? ' · anexo' : ''}
-                        </span>
-                      </div>
-                      <em>
-                        {ex.value}
-                        {ex.unit ? ` ${ex.unit}` : ''}
-                      </em>
-                      <Button
-                        variant="ghost"
-                        className="finance-row__del"
-                        icon={<Trash2 size={14} />}
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: 'Remover exame?',
-                            message: ex.name,
-                            confirmLabel: 'Remover',
-                          })
-                          if (!ok) return
-                          removeExam(ex.id)
-                          toast('Exame removido', 'info')
-                        }}
-                      />
-                    </article>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {todayCheckIn && (
-              <p className="saude-checkin-note">
-                Check-in: energia {todayCheckIn.energy}/5 · humor{' '}
-                {todayCheckIn.mood}/5
-              </p>
+            {tab === 'cuidado' && (
+              <SaudeCareTab
+                today={saude.today}
+                medications={state.medications}
+                todayCheckIn={todayCheckIn}
+                lastConsult={state.lastConsult}
+                proNotes={state.proNotes}
+                waterDaysTarget={state.weeklyGoals.waterDaysTarget}
+                sleepDaysTarget={state.weeklyGoals.sleepDaysTarget}
+                waterWeekDays={signals.waterWeekDays}
+                sleepWeekDays={signals.sleepWeekDays}
+                reminderEnabled={state.sleepReminderEnabled}
+                reminderTime={state.sleepReminderTime}
+                onToggleMed={toggleMedTaken}
+                onOpenMeds={() => setView('meds')}
+                onOpenCheckin={() => setView('checkin')}
+                onOpenConsult={() => setView('consult')}
+                onOpenGoals={() => setView('goals')}
+              />
             )}
           </div>
         }
@@ -553,6 +435,7 @@ export function SaudePage() {
                     bodyFatPct: Number(fatDraft) || undefined,
                   })
                 }
+                setTab('corpo')
                 setView('home')
                 toast('Corpo atualizado', 'ok')
               }}
@@ -611,6 +494,27 @@ export function SaudePage() {
                   />
                 </label>
               </div>
+              <fieldset className="saude-sex">
+                <legend>Sexo biológico (IMC)</legend>
+                <div className="habit-chips">
+                  {(
+                    [
+                      ['m', 'Masculino'],
+                      ['f', 'Feminino'],
+                      ['outro', 'Outro'],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`habit-chip${sex === id ? ' is-active' : ''}`}
+                      onClick={() => setSex(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
               {imc !== null && (
                 <p className="saude-imc-preview">
                   IMC <strong>{imc}</strong> · {imcLabel}
@@ -620,27 +524,6 @@ export function SaudePage() {
                 </p>
               )}
               <PanelActions onCancel={() => setView('home')} />
-              <ul className="saude-weight-list">
-                {state.metrics.slice(0, 8).map((m) => (
-                  <li key={m.id}>
-                    <span>
-                      {m.dateKey.slice(8)}/{m.dateKey.slice(5, 7)} · {m.weightKg}{' '}
-                      kg
-                      {m.waistCm ? ` · cintura ${m.waistCm}` : ''}
-                    </span>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() => {
-                        removeMetric(m.id)
-                        toast('Removido', 'info')
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
             </form>
           ) : view === 'sleep' ? (
             <form
@@ -655,9 +538,15 @@ export function SaudePage() {
                 upsertSleep({
                   hours: h,
                   quality: sleepQuality,
+                  readiness: sleepReadiness,
                   bedTime,
                   wakeTime,
+                  latencyMin: Number(sleepLatency) || 0,
+                  awakenings: Number(sleepAwakenings) || 0,
+                  habits: sleepHabits,
+                  note: sleepNote,
                 })
+                setTab('sono')
                 setView('home')
                 toast('Sono registado', 'ok')
               }}
@@ -682,7 +571,7 @@ export function SaudePage() {
                 </label>
               </div>
               <label className="plan-field">
-                <span>Horas</span>
+                <span>Horas dormidas</span>
                 <input
                   type="number"
                   min={0.5}
@@ -696,15 +585,83 @@ export function SaudePage() {
                 Calculado entre {bedTime} e {wakeTime}
                 {sleepHours ? ` · ${sleepHours} h` : ''}.
               </p>
+              <div className="saude-exam-grid">
+                <label className="plan-field">
+                  <span>Minutos até adormecer</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={180}
+                    value={sleepLatency}
+                    onChange={(e) => setSleepLatency(e.target.value)}
+                  />
+                </label>
+                <label className="plan-field">
+                  <span>Despertares</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={sleepAwakenings}
+                    onChange={(e) => setSleepAwakenings(e.target.value)}
+                  />
+                </label>
+              </div>
               <QualityField
-                label="Qualidade"
+                label="Qualidade do descanso"
                 value={sleepQuality}
                 onChange={setSleepQuality}
+                hint="1 = péssimo · 5 = excelente"
               />
+              <QualityField
+                label="Disposição ao acordar"
+                value={sleepReadiness}
+                onChange={setSleepReadiness}
+                hint="Como te sentiste ao levantar"
+              />
+              <fieldset className="saude-sex">
+                <legend>Diário (o que pode ter influenciado)</legend>
+                <div className="habit-chips">
+                  {(
+                    [
+                      ['phoneBeforeBed', 'Telemóvel'],
+                      ['caffeineLate', 'Cafeína tarde'],
+                      ['exerciseLate', 'Treino tarde'],
+                      ['alcohol', 'Álcool'],
+                      ['heavyMeal', 'Refeição pesada'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`habit-chip${sleepHabits[key] ? ' is-active' : ''}`}
+                      onClick={() =>
+                        setSleepHabits((prev) => ({
+                          ...prev,
+                          [key]: !prev[key],
+                        }))
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="plan-field">
+                <span>Nota</span>
+                <input
+                  value={sleepNote}
+                  onChange={(e) => setSleepNote(e.target.value)}
+                  placeholder="Opcional — sonhos, stress, etc."
+                />
+              </label>
               <p className="saude-imc-preview">
                 Débito da semana: ~{sleepDebt}h
               </p>
-              <PanelActions onCancel={() => setView('home')} label="Guardar sono" />
+              <PanelActions
+                onCancel={() => setView('home')}
+                label="Guardar sono"
+              />
             </form>
           ) : view === 'exam' ? (
             <form
@@ -754,6 +711,7 @@ export function SaudePage() {
                 setExamName('')
                 setExamValue('')
                 setExamFile(null)
+                setTab('exames')
                 setView('home')
                 toast('Exame guardado', 'ok')
               }}
@@ -818,7 +776,7 @@ export function SaudePage() {
                   />
                 </label>
                 <label className="plan-field">
-                  <span>Refazer em</span>
+                  <span>Refazer / consulta</span>
                   <input
                     type="date"
                     value={examDue}
@@ -843,7 +801,10 @@ export function SaudePage() {
                   <Sparkline points={chartSpark} />
                 </div>
               )}
-              <PanelActions onCancel={() => setView('home')} label="Guardar exame" />
+              <PanelActions
+                onCancel={() => setView('home')}
+                label="Guardar exame"
+              />
             </form>
           ) : view === 'meds' ? (
             <form
@@ -901,7 +862,7 @@ export function SaudePage() {
                       className="icon-btn"
                       onClick={() => removeMedication(m.id)}
                     >
-                      <Trash2 size={14} />
+                      Remover
                     </button>
                   </li>
                 ))}
@@ -939,7 +900,7 @@ export function SaudePage() {
                         className="icon-btn"
                         onClick={() => removePhoto(p.id)}
                       >
-                        <Trash2 size={14} />
+                        Remover
                       </button>
                     </figcaption>
                   </figure>
@@ -963,6 +924,7 @@ export function SaudePage() {
                   return
                 }
                 saveConsult(q1, q2, q3)
+                setTab('cuidado')
                 setView('home')
                 toast('Plano do dia pronto', 'ok')
               }}
@@ -1104,11 +1066,16 @@ export function SaudePage() {
               onSubmit={(e: FormEvent) => {
                 e.preventDefault()
                 upsertCheckIn({ energy, mood, symptoms })
+                setTab('cuidado')
                 setView('home')
                 toast('Check-in feito', 'ok')
               }}
             >
-              <QualityField label="Energia" value={energy} onChange={setEnergy} />
+              <QualityField
+                label="Energia"
+                value={energy}
+                onChange={setEnergy}
+              />
               <QualityField label="Humor" value={mood} onChange={setMood} />
               <label className="plan-field">
                 <span>Sintomas</span>
@@ -1123,117 +1090,5 @@ export function SaudePage() {
         }
       />
     </PageTransition>
-  )
-}
-
-function SignalCard({
-  icon,
-  title,
-  text,
-  ok,
-  action,
-}: {
-  icon: ReactNode
-  title: string
-  text: string
-  ok?: boolean
-  action: ReactNode
-}) {
-  return (
-    <motion.article
-      className={`surface saude-signal${ok ? ' is-ok' : ''}`}
-      variants={staggerItem}
-    >
-      {icon}
-      <div>
-        <strong>{title}</strong>
-        <span>{text}</span>
-      </div>
-      <span className="saude-signal__link">{action}</span>
-    </motion.article>
-  )
-}
-
-function QualityField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: SleepQuality
-  onChange: (q: SleepQuality) => void
-}) {
-  return (
-    <fieldset className="saude-sex">
-      <legend>{label}</legend>
-      <div className="habit-chips">
-        {QUALITY.map((q) => (
-          <button
-            key={q}
-            type="button"
-            className={`habit-chip${value === q ? ' is-active' : ''}`}
-            onClick={() => onChange(q)}
-          >
-            {q}
-          </button>
-        ))}
-      </div>
-    </fieldset>
-  )
-}
-
-function PanelActions({
-  onCancel,
-  label = 'Guardar',
-}: {
-  onCancel: () => void
-  label?: string
-}) {
-  return (
-    <div className="habit-form__actions">
-      <button type="button" className="btn btn--ghost" onClick={onCancel}>
-        Cancelar
-      </button>
-      <Button type="submit" variant="primary">
-        {label}
-      </Button>
-    </div>
-  )
-}
-
-function sparkPoints(values: number[]): string | null {
-  if (values.length < 2) return null
-  const w = 120
-  const h = 36
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const span = max - min || 1
-  return values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * w
-      const y = h - ((v - min) / span) * (h - 4) - 2
-      return `${x},${y}`
-    })
-    .join(' ')
-}
-
-function Sparkline({ points }: { points: string }) {
-  return (
-    <svg
-      className="saude-spark"
-      viewBox="0 0 120 36"
-      width="100%"
-      height={36}
-      aria-hidden
-    >
-      <polyline
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
   )
 }

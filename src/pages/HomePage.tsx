@@ -16,6 +16,7 @@ import { PageTransition } from '../components/ui/PageTransition'
 import { ProgressRing } from '../components/ui/ProgressRing'
 import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { DailyCoachCard } from '../components/insights/DailyCoachCard'
+import { WaterTrackerCard } from '../components/nutricao/WaterTrackerCard'
 import { useAuth } from '../hooks/useAuth'
 import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
@@ -80,7 +81,14 @@ export function HomePage() {
     billsOverdue,
     billsDueSoonAlert,
   } = useFinancas()
-  const { todayMacros, todayEntries, state: nutriState } = useNutricao()
+  const {
+    todayMacros,
+    todayEntries,
+    state: nutriState,
+    water,
+    setWaterServings,
+    setGoals,
+  } = useNutricao()
   const {
     score: saudeScore,
     signals: saudeSignals,
@@ -563,6 +571,15 @@ export function HomePage() {
       <p className="home-lead">{lead}</p>
 
       <DailyCoachCard report={dailyCoach} />
+
+      <WaterTrackerCard
+        className="home-water"
+        waterMl={water}
+        waterGoalMl={nutriState.waterGoal}
+        servingMl={nutriState.waterServingMl}
+        onSetServings={setWaterServings}
+        onSetServingMl={(ml) => setGoals({ waterServingMl: ml })}
+      />
 
       {notices.length > 0 && (
         <div className="home-notices">

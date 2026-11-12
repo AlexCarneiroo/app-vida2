@@ -2,7 +2,6 @@ import { motion } from 'framer-motion'
 import {
   CalendarDays,
   Check,
-  Droplets,
   Plus,
   Search,
   Star,
@@ -13,6 +12,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MealPlanEditor } from '../components/nutricao/MealPlanEditor'
+import { WaterTrackerCard } from '../components/nutricao/WaterTrackerCard'
 import {
   PageTransition,
   staggerContainer,
@@ -29,7 +29,6 @@ import {
   entryMacros,
   filterPantry,
   scaleMacros,
-  waterServingSlots,
 } from '../data/nutricaoDefaults'
 import { useNutricao } from '../hooks/useNutricao'
 import {
@@ -98,16 +97,15 @@ export function NutricaoPage() {
   const [searchError, setSearchError] = useState('')
   const [view, setView] = useState<'home' | 'goals' | 'plan'>('home')
   /** null = mostrar valor guardado; string = rascunho (permite apagar) */
-  const [bottleDraft, setBottleDraft] = useState<string | null>(null)
   const [goalsBottleDraft, setGoalsBottleDraft] = useState<string | null>(null)
   const onPanel = view !== 'home'
 
-  const bottleDisplay = bottleDraft ?? String(state.waterServingMl)
   const goalsBottleDisplay =
     goalsBottleDraft ?? String(state.waterServingMl)
 
-  function commitBottleDraft(raw: string | null, clearDraft: () => void) {
-    clearDraft()
+  function commitGoalsBottleDraft() {
+    const raw = goalsBottleDraft
+    setGoalsBottleDraft(null)
     if (raw === null) return
     const trimmed = raw.trim()
     if (trimmed === '') {
@@ -335,72 +333,13 @@ export function NutricaoPage() {
                 </button>
               </section>
 
-              <section className="surface nutri-water">
-                <div className="nutri-water__head">
-                  <Droplets size={16} />
-                  <strong>Água</strong>
-                  <span>
-                    {water} / {state.waterGoal} ml
-                  </span>
-                </div>
-                <p className="nutri-water__hint">
-                  Cada marca = {state.waterServingMl} ml (tua garrafa).
-                </p>
-                <div
-                  className="nutri-water__glasses"
-                  role="group"
-                  aria-label="Garrafas de água"
-                >
-                  {Array.from(
-                    {
-                      length: waterServingSlots(
-                        state.waterGoal,
-                        state.waterServingMl,
-                      ),
-                    },
-                    (_, i) => {
-                      const n = i + 1
-                      const filledMl = n * state.waterServingMl
-                      const filled = water >= filledMl
-                      const currentServings = Math.round(
-                        water / Math.max(1, state.waterServingMl),
-                      )
-                      return (
-                        <button
-                          key={n}
-                          type="button"
-                          className={`nutri-bottle${filled ? ' is-filled' : ''}`}
-                          aria-pressed={filled}
-                          aria-label={`${state.waterServingMl} ml · garrafa ${n}`}
-                          onClick={() =>
-                            setWaterServings(
-                              currentServings === n ? n - 1 : n,
-                            )
-                          }
-                        >
-                          <span className="nutri-bottle__body" />
-                          <em>{state.waterServingMl}</em>
-                        </button>
-                      )
-                    },
-                  )}
-                </div>
-                <label className="nutri-water__serving">
-                  <span>Garrafa (ml)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={2000}
-                    step={50}
-                    inputMode="numeric"
-                    value={bottleDisplay}
-                    onChange={(e) => setBottleDraft(e.target.value)}
-                    onBlur={() =>
-                      commitBottleDraft(bottleDraft, () => setBottleDraft(null))
-                    }
-                  />
-                </label>
-              </section>
+              <WaterTrackerCard
+                waterMl={water}
+                waterGoalMl={state.waterGoal}
+                servingMl={state.waterServingMl}
+                onSetServings={setWaterServings}
+                onSetServingMl={(ml) => setGoals({ waterServingMl: ml })}
+              />
 
               <section className="surface nutri-today-plan">
                 <div className="nutri-today-plan__head">
@@ -720,11 +659,7 @@ export function NutricaoPage() {
                       inputMode="numeric"
                       value={goalsBottleDisplay}
                       onChange={(e) => setGoalsBottleDraft(e.target.value)}
-                      onBlur={() =>
-                        commitBottleDraft(goalsBottleDraft, () =>
-                          setGoalsBottleDraft(null),
-                        )
-                      }
+                      onBlur={commitGoalsBottleDraft}
                     />
                   </label>
                 </div>

@@ -443,7 +443,7 @@ export function FinancasPage() {
   return (
     <PageTransition>
       <PageHeader
-        kicker="Dinheiro"
+      kicker="Dinheiro"
         title={panelMeta?.title ?? 'Finanças'}
         sub={
           panelMeta?.sub ??

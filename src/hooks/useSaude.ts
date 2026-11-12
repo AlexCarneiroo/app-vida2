@@ -28,11 +28,21 @@ import {
 } from '../data/saudeDefaults'
 import { dateKey, shiftDateKey, uid } from '../lib/date'
 import { loadSaudePersisted } from '../lib/persist'
+import {
+  buildRichSleepInsights,
+  challengeProgress,
+  createNap,
+  sleepRangeStats,
+  startChallenge,
+} from '../lib/sleepEngine'
 import type {
   BodySex,
   LabExam,
   SaudeState,
+  SleepChallengeKind,
+  SleepHabitFlags,
   SleepQuality,
+  SleepRoutineItem,
   WeeklyHealthGoals,
 } from '../types/saude'
 import { useCloudSyncedState } from './useCloudSyncedState'
@@ -50,6 +60,7 @@ function loadDoc() {
 const isEmpty = (d: SaudeState) =>
   d.metrics.length === 0 &&
   d.sleep.length === 0 &&
+  (d.naps?.length ?? 0) === 0 &&
   d.exams.length === 0 &&
   d.checkIns.length === 0 &&
   d.medications.length === 0 &&
@@ -202,17 +213,33 @@ export function useSaude() {
     (lastNightSleep?.hours ?? 99) < 6.5 && lastNightSleep !== null
 
   useEffect(() => {
-    if (!state.sleepReminderEnabled || !state.sleepReminderTime) return
-    const [hh, mm] = state.sleepReminderTime.split(':').map(Number)
+    const bed = state.sleepReminderTime || state.sleepGoalBedTime || '22:30'
+    const [hh, mm] = bed.split(':').map(Number)
+    const bedMins = (hh || 22) * 60 + (mm || 0)
+    const windMins = Math.max(10, state.windDownMinutes || 45)
     const tick = () => {
+      if (tonightSleep) return
       const now = new Date()
       const mins = now.getHours() * 60 + now.getMinutes()
-      const target = (hh || 22) * 60 + (mm || 0)
-      const stamp = `${today}-${state.sleepReminderTime}`
-      if (Math.abs(mins - target) <= 12 && remindedRef.current !== stamp) {
-        if (!tonightSleep) {
+      if (state.sleepReminderEnabled) {
+        const stamp = `${today}-bed-${bed}`
+        if (Math.abs(mins - bedMins) <= 12 && remindedRef.current !== stamp) {
           remindedRef.current = stamp
           toast('Lembrete de sono — hora de desacelerar', 'info')
+        }
+      }
+      if (state.windDownEnabled !== false) {
+        const windTarget = (bedMins - windMins + 24 * 60) % (24 * 60)
+        const stamp = `${today}-wind-${windTarget}`
+        if (
+          Math.abs(mins - windTarget) <= 12 &&
+          remindedRef.current !== stamp
+        ) {
+          remindedRef.current = stamp
+          toast(
+            `Rotina noturna — começa a preparação (~${windMins} min)`,
+            'info',
+          )
         }
       }
     }
@@ -222,6 +249,9 @@ export function useSaude() {
   }, [
     state.sleepReminderEnabled,
     state.sleepReminderTime,
+    state.sleepGoalBedTime,
+    state.windDownEnabled,
+    state.windDownMinutes,
     today,
     tonightSleep,
     toast,
@@ -234,6 +264,11 @@ export function useSaude() {
       weightGoalKg?: number
       sleepReminderEnabled?: boolean
       sleepReminderTime?: string
+      sleepGoalHours?: number
+      sleepGoalBedTime?: string
+      sleepGoalWakeTime?: string
+      windDownEnabled?: boolean
+      windDownMinutes?: number
       weeklyGoals?: Partial<WeeklyHealthGoals>
     }) => {
       update((prev) => ({
@@ -255,6 +290,26 @@ export function useSaude() {
           patch.sleepReminderTime !== undefined
             ? patch.sleepReminderTime
             : prev.sleepReminderTime,
+        sleepGoalHours:
+          patch.sleepGoalHours !== undefined
+            ? Math.max(5, Math.min(12, patch.sleepGoalHours))
+            : prev.sleepGoalHours,
+        sleepGoalBedTime:
+          patch.sleepGoalBedTime !== undefined
+            ? patch.sleepGoalBedTime
+            : prev.sleepGoalBedTime,
+        sleepGoalWakeTime:
+          patch.sleepGoalWakeTime !== undefined
+            ? patch.sleepGoalWakeTime
+            : prev.sleepGoalWakeTime,
+        windDownEnabled:
+          patch.windDownEnabled !== undefined
+            ? patch.windDownEnabled
+            : prev.windDownEnabled,
+        windDownMinutes:
+          patch.windDownMinutes !== undefined
+            ? Math.max(10, Math.min(180, Math.round(patch.windDownMinutes)))
+            : prev.windDownMinutes,
         weeklyGoals: patch.weeklyGoals
           ? {
               waterDaysTarget: Math.max(
@@ -314,8 +369,12 @@ export function useSaude() {
     (input: {
       hours: number
       quality: SleepQuality
+      readiness?: SleepQuality
       bedTime?: string | null
       wakeTime?: string | null
+      latencyMin?: number
+      awakenings?: number
+      habits?: Partial<SleepHabitFlags>
       note?: string
       dateKey?: string
     }) => {
@@ -323,10 +382,151 @@ export function useSaude() {
       const entry = createSleep({ ...input, dateKey: day })
       update((prev) => {
         const rest = prev.sleep.filter((s) => s.dateKey !== day)
-        return { ...prev, sleep: [entry, ...rest].slice(0, 120) }
+        let challenge = prev.sleepChallenge
+        if (challenge?.active) {
+          const progress = challengeProgress(
+            [entry, ...rest],
+            challenge,
+            today,
+            prev.sleepGoalHours || 8,
+          )
+          if (progress.done) {
+            challenge = {
+              ...challenge,
+              active: false,
+              completedDateKey: today,
+            }
+          }
+        }
+        return {
+          ...prev,
+          sleep: [entry, ...rest].slice(0, 180),
+          sleepChallenge: challenge,
+        }
       })
     },
     [today, update],
+  )
+
+  const removeSleep = useCallback(
+    (id: string) => {
+      update((prev) => ({
+        ...prev,
+        sleep: prev.sleep.filter((s) => s.id !== id),
+      }))
+    },
+    [update],
+  )
+
+  const addNap = useCallback(
+    (input: { startTime: string; endTime: string; note?: string; dateKey?: string }) => {
+      const nap = createNap(input)
+      if (!nap) return
+      update((prev) => ({
+        ...prev,
+        naps: [nap, ...(prev.naps ?? [])].slice(0, 200),
+      }))
+    },
+    [update],
+  )
+
+  const removeNap = useCallback(
+    (id: string) => {
+      update((prev) => ({
+        ...prev,
+        naps: (prev.naps ?? []).filter((n) => n.id !== id),
+      }))
+    },
+    [update],
+  )
+
+  const setSleepRoutine = useCallback(
+    (items: SleepRoutineItem[]) => {
+      update((prev) => ({
+        ...prev,
+        sleepRoutine: items.slice(0, 20),
+      }))
+    },
+    [update],
+  )
+
+  const toggleRoutineItem = useCallback(
+    (itemId: string, day = today) => {
+      update((prev) => {
+        const done = { ...(prev.sleepRoutineDone ?? {}) }
+        const current = new Set(done[day] ?? [])
+        if (current.has(itemId)) current.delete(itemId)
+        else current.add(itemId)
+        done[day] = [...current]
+        return { ...prev, sleepRoutineDone: done }
+      })
+    },
+    [today, update],
+  )
+
+  const beginSleepChallenge = useCallback(
+    (kind: SleepChallengeKind) => {
+      update((prev) => ({
+        ...prev,
+        sleepChallenge: startChallenge(kind, today),
+      }))
+    },
+    [today, update],
+  )
+
+  const clearSleepChallenge = useCallback(() => {
+    update((prev) => ({ ...prev, sleepChallenge: null }))
+  }, [update])
+
+  const sleepGoalHours = state.sleepGoalHours || 8
+
+  const sleepAnalytics = useMemo(
+    () => sleepRangeStats(state.sleep, today, 14, sleepGoalHours),
+    [state.sleep, today, sleepGoalHours],
+  )
+
+  const sleepStats7 = useMemo(
+    () => sleepRangeStats(state.sleep, today, 7, sleepGoalHours),
+    [state.sleep, today, sleepGoalHours],
+  )
+
+  const sleepStats30 = useMemo(
+    () => sleepRangeStats(state.sleep, today, 30, sleepGoalHours),
+    [state.sleep, today, sleepGoalHours],
+  )
+
+  const napsToday = useMemo(
+    () => (state.naps ?? []).filter((n) => n.dateKey === today),
+    [state.naps, today],
+  )
+
+  const napsTodayMin = useMemo(
+    () => napsToday.reduce((a, n) => a + n.minutes, 0),
+    [napsToday],
+  )
+
+  const challenge = useMemo(
+    () =>
+      challengeProgress(
+        state.sleep,
+        state.sleepChallenge,
+        today,
+        sleepGoalHours,
+      ),
+    [state.sleep, state.sleepChallenge, today, sleepGoalHours],
+  )
+
+  const sleepInsights = useMemo(
+    () =>
+      buildRichSleepInsights({
+        stats7: sleepStats7,
+        stats30: sleepStats30,
+        sleepDebt,
+        tonight: sleepRef,
+        napsTodayMin,
+        agendaHint: null,
+      }),
+    [sleepStats7, sleepStats30, sleepDebt, sleepRef, napsTodayMin],
   )
 
   const addExam = useCallback(
@@ -482,6 +682,14 @@ export function useSaude() {
     weightTrend,
     projectionWeeks,
     sleepWeek,
+    sleepAnalytics,
+    sleepStats7,
+    sleepStats30,
+    sleepInsights,
+    sleepGoalHours,
+    napsToday,
+    napsTodayMin,
+    challenge,
     moodLog,
     exams: state.exams,
     poorSleepForTraining,
@@ -490,6 +698,13 @@ export function useSaude() {
     addWeight,
     removeMetric,
     upsertSleep,
+    removeSleep,
+    addNap,
+    removeNap,
+    setSleepRoutine,
+    toggleRoutineItem,
+    beginSleepChallenge,
+    clearSleepChallenge,
     addExam,
     removeExam,
     upsertCheckIn,

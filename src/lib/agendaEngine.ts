@@ -363,3 +363,78 @@ export function dayLoadScore(items: AgendaItem[]) {
     overloaded: timed.length >= 8 || minutes >= 10 * 60,
   }
 }
+
+/** Janela visual da grade (06:00–22:00). */
+export const AGENDA_GRID_START = 6 * 60
+export const AGENDA_GRID_MINUTES = 16 * 60
+
+export type LaidOutAgendaItem = {
+  item: AgendaItem
+  top: number
+  height: number
+  col: number
+  cols: number
+  duration: number
+  start: number
+  end: number
+}
+
+/** Empacota eventos sobrepostos em colunas (estilo calendário). */
+export function layoutTimedItems(items: AgendaItem[]): LaidOutAgendaItem[] {
+  const events = items
+    .filter((i) => !i.allDay && i.startTime)
+    .map((item) => {
+      const start = parseTimeToMinutes(item.startTime) ?? AGENDA_GRID_START
+      const rawEnd = parseTimeToMinutes(item.endTime) ?? start + 30
+      const end = Math.max(rawEnd, start + 15)
+      return { item, start, end }
+    })
+    .sort((a, b) => a.start - b.start || b.end - a.end)
+
+  const out: LaidOutAgendaItem[] = []
+  let i = 0
+  while (i < events.length) {
+    const cluster = [events[i]]
+    let clusterEnd = events[i].end
+    let j = i + 1
+    while (j < events.length && events[j].start < clusterEnd) {
+      cluster.push(events[j])
+      clusterEnd = Math.max(clusterEnd, events[j].end)
+      j += 1
+    }
+
+    const colEnds: number[] = []
+    const packed = cluster.map((ev) => {
+      let col = colEnds.findIndex((end) => end <= ev.start)
+      if (col === -1) {
+        col = colEnds.length
+        colEnds.push(ev.end)
+      } else {
+        colEnds[col] = ev.end
+      }
+      return { ...ev, col }
+    })
+    const cols = Math.max(1, colEnds.length)
+
+    for (const ev of packed) {
+      const top =
+        ((ev.start - AGENDA_GRID_START) / AGENDA_GRID_MINUTES) * 100
+      const height = Math.max(
+        3.4,
+        ((ev.end - ev.start) / AGENDA_GRID_MINUTES) * 100,
+      )
+      out.push({
+        item: ev.item,
+        top,
+        height,
+        col: ev.col,
+        cols,
+        duration: ev.end - ev.start,
+        start: ev.start,
+        end: ev.end,
+      })
+    }
+    i = j
+  }
+  return out
+}

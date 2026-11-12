@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { AgendaEventForm } from '../components/agenda/AgendaEventForm'
+import { AgendaIcon } from '../components/agenda/AgendaIcon'
 import {
   AgendaDayView,
   AgendaListView,
@@ -321,10 +322,10 @@ export function AgendaPage() {
                 </strong>
                 <span>
                   {dayConflicts.length > 0
-                    ? `⚠️ ${dayConflicts.length} conflito${dayConflicts.length > 1 ? 's' : ''} neste dia`
+                    ? `${dayConflicts.length} conflito${dayConflicts.length > 1 ? 's' : ''} neste dia`
                     : availability.busy
-                      ? `💼 Trabalho ${availability.startTime ?? ''}–${availability.endTime ?? ''}`
-                      : '🌿 Dia sem expediente marcado'}
+                      ? `Trabalho ${availability.startTime ?? ''}–${availability.endTime ?? ''}`
+                      : 'Dia sem expediente marcado'}
                 </span>
               </div>
               <button
@@ -501,14 +502,6 @@ export function AgendaPage() {
               </section>
             )}
 
-            <button
-              type="button"
-              className="agenda-fab"
-              onClick={openCreate}
-              aria-label="Adicionar compromisso"
-            >
-              <Plus size={22} />
-            </button>
           </div>
         }
         panel={
@@ -538,11 +531,12 @@ export function AgendaPage() {
                 className="agenda-detail__swatch"
                 style={{ background: activeItem.color }}
               />
-              <p className="page-kicker">
-                {agendaCategoryEmoji(
-                  activeItem.categoryId,
-                  activeItem.source,
-                )}{' '}
+              <p className="page-kicker agenda-detail__kicker">
+                <AgendaIcon
+                  categoryId={activeItem.categoryId}
+                  source={activeItem.source}
+                  size={14}
+                />
                 {activeItem.source === 'event'
                   ? 'Compromisso'
                   : activeItem.source === 'treino'

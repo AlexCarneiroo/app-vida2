@@ -12,7 +12,12 @@ import {
   rebuildDayLog,
 } from '../data/nutricaoDefaults'
 import { emptyJogosState } from '../data/jogosDefaults'
-import { defaultWeeklyGoals, normalizeSex } from '../data/saudeDefaults'
+import {
+  DEFAULT_SLEEP_ROUTINE,
+  defaultWeeklyGoals,
+  normalizeSex,
+} from '../data/saudeDefaults'
+import { minutesToTime, parseTimeToMinutes } from './agendaEngine'
 import { normalizeAgendaState } from '../data/agendaDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
 import { exercisesForMuscle } from '../data/exerciseLibrary'
@@ -53,12 +58,15 @@ import type {
   HealthCheckIn,
   LabExam,
   Medication,
+  NapEntry,
   ProgressPhoto,
   ProNote,
   QuickConsult,
   SaudeState,
+  SleepChallenge,
   SleepEntry,
   SleepQuality,
+  SleepRoutineItem,
 } from '../types/saude'
 import type {
   ActiveWorkout,
@@ -971,12 +979,16 @@ function optNum(n: unknown): number | undefined {
 function normalizeMetric(raw: unknown): BodyMetric | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Partial<BodyMetric>
-  if (typeof o.id !== 'string' || !o.id) return null
   const weightKg = Number(o.weightKg)
   if (!Number.isFinite(weightKg) || weightKg <= 0) return null
+  const dateKey = typeof o.dateKey === 'string' ? o.dateKey : ''
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : `metric_legacy_${dateKey || 'x'}_${Math.round(weightKg * 10)}`
   return {
-    id: o.id,
-    dateKey: o.dateKey || '',
+    id,
+    dateKey,
     weightKg: Math.round(weightKg * 10) / 10,
     waistCm: optNum(o.waistCm),
     armCm: optNum(o.armCm),
@@ -987,30 +999,229 @@ function normalizeMetric(raw: unknown): BodyMetric | null {
   }
 }
 
+function normalizeSleepHabits(raw: unknown): SleepEntry['habits'] {
+  if (!raw || typeof raw !== 'object') return undefined
+  const o = raw as Record<string, unknown>
+  const hasAny =
+    'phoneBeforeBed' in o ||
+    'caffeineLate' in o ||
+    'exerciseLate' in o ||
+    'alcohol' in o ||
+    'heavyMeal' in o
+  if (!hasAny) return undefined
+  return {
+    phoneBeforeBed: Boolean(o.phoneBeforeBed),
+    caffeineLate: Boolean(o.caffeineLate),
+    exerciseLate: Boolean(o.exerciseLate),
+    alcohol: Boolean(o.alcohol),
+    heavyMeal: Boolean(o.heavyMeal),
+  }
+}
+
+function asTimeOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return parseTimeToMinutes(trimmed) == null ? null : trimmed
+}
+
+function shiftTimeByHours(time: string, hours: number): string | null {
+  const base = parseTimeToMinutes(time)
+  if (base == null || !Number.isFinite(hours) || hours === 0) return null
+  const total =
+    (((base + Math.round(hours * 60)) % (24 * 60)) + 24 * 60) % (24 * 60)
+  return minutesToTime(total)
+}
+
+function sleepEntryScore(entry: SleepEntry): number {
+  let score = 0
+  if (entry.hours > 0) score += 2
+  if (entry.bedTime) score += 1
+  if (entry.wakeTime) score += 1
+  if (entry.readiness != null) score += 1
+  if (entry.latencyMin != null) score += 1
+  if (entry.awakenings != null) score += 1
+  if (entry.habits) score += 1
+  if (entry.note) score += 1
+  return score
+}
+
+function mergeSleepFields(a: SleepEntry, b: SleepEntry): SleepEntry {
+  const prefer = sleepEntryScore(b) >= sleepEntryScore(a) ? b : a
+  const other = prefer === a ? b : a
+  return {
+    ...other,
+    ...prefer,
+    hours: prefer.hours > 0 ? prefer.hours : other.hours,
+    quality: prefer.quality || other.quality,
+    readiness: prefer.readiness ?? other.readiness,
+    bedTime: prefer.bedTime || other.bedTime || null,
+    wakeTime: prefer.wakeTime || other.wakeTime || null,
+    latencyMin: prefer.latencyMin ?? other.latencyMin,
+    awakenings: prefer.awakenings ?? other.awakenings,
+    habits: prefer.habits ?? other.habits,
+    note: prefer.note || other.note,
+  }
+}
+
+function dedupeSleepByDay(entries: SleepEntry[]): SleepEntry[] {
+  const map = new Map<string, SleepEntry>()
+  const orphan: SleepEntry[] = []
+  for (const entry of entries) {
+    if (!entry.dateKey) {
+      orphan.push(entry)
+      continue
+    }
+    const prev = map.get(entry.dateKey)
+    map.set(entry.dateKey, prev ? mergeSleepFields(prev, entry) : entry)
+  }
+  return [...map.values(), ...orphan]
+}
+
+function inferSleepTimes(
+  entry: SleepEntry,
+  goalBed: string,
+  goalWake: string,
+): SleepEntry {
+  if (entry.hours <= 0) return entry
+  let bedTime = entry.bedTime || null
+  let wakeTime = entry.wakeTime || null
+  if (bedTime && wakeTime) return entry
+
+  if (bedTime && !wakeTime) {
+    wakeTime = shiftTimeByHours(bedTime, entry.hours)
+  } else if (wakeTime && !bedTime) {
+    bedTime = shiftTimeByHours(wakeTime, -entry.hours)
+  } else {
+    bedTime = goalBed
+    wakeTime =
+      shiftTimeByHours(goalBed, entry.hours) ||
+      goalWake ||
+      shiftTimeByHours(goalBed, 8)
+  }
+
+  return {
+    ...entry,
+    bedTime: bedTime || entry.bedTime || null,
+    wakeTime: wakeTime || entry.wakeTime || null,
+  }
+}
+
+function mergeDefaultSleepRoutine(
+  existing: SleepRoutineItem[],
+): SleepRoutineItem[] {
+  const map = new Map<string, SleepRoutineItem>()
+  for (const item of existing) map.set(item.id, item)
+  for (const def of DEFAULT_SLEEP_ROUTINE) {
+    if (!map.has(def.id)) map.set(def.id, { ...def })
+  }
+  return [...map.values()]
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
+    .slice(0, 20)
+}
+
 function normalizeSleep(raw: unknown): SleepEntry | null {
   if (!raw || typeof raw !== 'object') return null
-  const o = raw as Partial<SleepEntry>
+  const o = raw as Partial<SleepEntry> & Record<string, unknown>
+  const dateKey = typeof o.dateKey === 'string' ? o.dateKey : ''
+  const hours = Math.max(0, Math.min(24, Number(o.hours) || 0))
+  const quality = asQuality(o.quality)
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : dateKey
+        ? `sleep_legacy_${dateKey}_${Math.round(hours * 10)}_${quality}`
+        : ''
+  if (!id) return null
+  // Registo vazio sem horas/qualidade útil — ignora lixo
+  if (hours <= 0 && o.quality == null && !o.bedTime && !o.wakeTime) return null
+
+  const latency =
+    o.latencyMin !== undefined && Number.isFinite(Number(o.latencyMin))
+      ? Math.max(0, Math.min(180, Math.round(Number(o.latencyMin))))
+      : undefined
+  const awakenings =
+    o.awakenings !== undefined && Number.isFinite(Number(o.awakenings))
+      ? Math.max(0, Math.min(30, Math.round(Number(o.awakenings))))
+      : undefined
+  return {
+    id,
+    dateKey,
+    hours,
+    quality,
+    readiness:
+      o.readiness !== undefined && o.readiness !== null
+        ? asQuality(o.readiness)
+        : undefined,
+    bedTime: asTimeOrNull(o.bedTime),
+    wakeTime: asTimeOrNull(o.wakeTime),
+    latencyMin: latency,
+    awakenings,
+    habits: normalizeSleepHabits(o.habits),
+    note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+  }
+}
+
+function normalizeNap(raw: unknown): NapEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<NapEntry>
   if (typeof o.id !== 'string' || !o.id) return null
+  if (typeof o.startTime !== 'string' || typeof o.endTime !== 'string') return null
   return {
     id: o.id,
     dateKey: o.dateKey || '',
-    hours: Math.max(0, Math.min(24, Number(o.hours) || 0)),
-    quality: asQuality(o.quality),
-    bedTime: typeof o.bedTime === 'string' ? o.bedTime : null,
-    wakeTime: typeof o.wakeTime === 'string' ? o.wakeTime : null,
+    startTime: o.startTime,
+    endTime: o.endTime,
+    minutes: Math.max(1, Math.min(240, Math.round(Number(o.minutes) || 1))),
     note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeRoutineItem(raw: unknown): SleepRoutineItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<SleepRoutineItem>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const label = o.label?.trim()
+  if (!label) return null
+  return {
+    id: o.id,
+    label,
+    enabled: o.enabled !== false,
+    order: Math.max(0, Math.round(Number(o.order) || 0)),
+  }
+}
+
+function normalizeChallenge(raw: unknown): SleepChallenge | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<SleepChallenge>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const kind = Number(o.kind)
+  if (kind !== 7 && kind !== 14 && kind !== 30) return null
+  if (typeof o.startDateKey !== 'string' || !o.startDateKey) return null
+  return {
+    id: o.id,
+    kind: kind as 7 | 14 | 30,
+    startDateKey: o.startDateKey,
+    active: o.active !== false,
+    completedDateKey:
+      typeof o.completedDateKey === 'string' ? o.completedDateKey : null,
   }
 }
 
 function normalizeExam(raw: unknown): LabExam | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Partial<LabExam>
-  if (typeof o.id !== 'string' || !o.id) return null
   const name = o.name?.trim()
   if (!name) return null
+  const dateKey = typeof o.dateKey === 'string' ? o.dateKey : ''
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : `exam_legacy_${dateKey || 'x'}_${name.toLowerCase().replace(/\s+/g, '_')}`
   return {
-    id: o.id,
-    dateKey: o.dateKey || '',
+    id,
+    dateKey,
     name,
     value: (o.value ?? '—').toString().trim() || '—',
     unit: typeof o.unit === 'string' && o.unit.trim() ? o.unit.trim() : undefined,
@@ -1037,12 +1248,21 @@ function normalizeExam(raw: unknown): LabExam | null {
 function normalizeCheckIn(raw: unknown): HealthCheckIn | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Partial<HealthCheckIn>
-  if (typeof o.id !== 'string' || !o.id) return null
+  const dateKey = typeof o.dateKey === 'string' ? o.dateKey : ''
+  const energy = asQuality(o.energy)
+  const mood = asQuality(o.mood)
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : dateKey
+        ? `checkin_legacy_${dateKey}_${energy}_${mood}`
+        : ''
+  if (!id) return null
   return {
-    id: o.id,
-    dateKey: o.dateKey || '',
-    energy: asQuality(o.energy),
-    mood: asQuality(o.mood),
+    id,
+    dateKey,
+    energy,
+    mood,
     symptoms:
       typeof o.symptoms === 'string' && o.symptoms.trim()
         ? o.symptoms.trim()
@@ -1053,11 +1273,14 @@ function normalizeCheckIn(raw: unknown): HealthCheckIn | null {
 function normalizeMedication(raw: unknown): Medication | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Partial<Medication>
-  if (typeof o.id !== 'string' || !o.id) return null
   const name = o.name?.trim()
   if (!name) return null
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : `med_legacy_${name.toLowerCase().replace(/\s+/g, '_')}`
   return {
-    id: o.id,
+    id,
     name,
     dose: typeof o.dose === 'string' ? o.dose : '',
     time: typeof o.time === 'string' && o.time ? o.time : '08:00',
@@ -1112,28 +1335,118 @@ function normalizeConsult(raw: unknown): QuickConsult | null {
 
 export function normalizeSaude(raw: unknown): SaudeState {
   const parsed = (raw && typeof raw === 'object' ? raw : {}) as Partial<SaudeState>
+  const routineRaw = asArray<SleepRoutineItem>(parsed.sleepRoutine)
+    .map(normalizeRoutineItem)
+    .filter((r): r is SleepRoutineItem => Boolean(r))
+  const routineDone: Record<string, string[]> = {}
+  if (parsed.sleepRoutineDone && typeof parsed.sleepRoutineDone === 'object') {
+    for (const [key, value] of Object.entries(parsed.sleepRoutineDone)) {
+      if (!Array.isArray(value)) continue
+      routineDone[key] = value.map(String).filter(Boolean).slice(0, 20)
+    }
+  }
+
+  const checkIns = asArray<HealthCheckIn>(parsed.checkIns)
+    .map(normalizeCheckIn)
+    .filter((c): c is HealthCheckIn => Boolean(c))
+
+  const energyByDay = new Map<string, SleepQuality>()
+  for (const checkIn of checkIns) {
+    if (!checkIn.dateKey) continue
+    // Mantém a energia mais recente / última no array para o dia
+    energyByDay.set(checkIn.dateKey, checkIn.energy)
+  }
+
+  let sleep = dedupeSleepByDay(
+    asArray<SleepEntry>(parsed.sleep)
+      .map(normalizeSleep)
+      .filter((s): s is SleepEntry => Boolean(s))
+      .map((entry) =>
+        entry.readiness != null
+          ? entry
+          : energyByDay.has(entry.dateKey)
+            ? { ...entry, readiness: energyByDay.get(entry.dateKey) }
+            : entry,
+      ),
+  )
+
+  const reminderTime =
+    typeof parsed.sleepReminderTime === 'string' &&
+    asTimeOrNull(parsed.sleepReminderTime)
+      ? parsed.sleepReminderTime
+      : '22:30'
+
+  const hasExplicitGoalHours =
+    parsed.sleepGoalHours !== undefined &&
+    parsed.sleepGoalHours !== null &&
+    Number(parsed.sleepGoalHours) > 0
+  const hasExplicitGoalBed =
+    typeof parsed.sleepGoalBedTime === 'string' &&
+    Boolean(asTimeOrNull(parsed.sleepGoalBedTime))
+  const hasExplicitGoalWake =
+    typeof parsed.sleepGoalWakeTime === 'string' &&
+    Boolean(asTimeOrNull(parsed.sleepGoalWakeTime))
+
+  let sleepGoalHours = hasExplicitGoalHours
+    ? Math.max(5, Math.min(12, Number(parsed.sleepGoalHours)))
+    : 8
+  if (!hasExplicitGoalHours && sleep.length >= 5) {
+    const avgHours =
+      sleep.reduce((sum, entry) => sum + entry.hours, 0) / sleep.length
+    if (Number.isFinite(avgHours) && avgHours >= 5 && avgHours <= 12) {
+      sleepGoalHours = Math.max(
+        5,
+        Math.min(12, Math.round(avgHours * 2) / 2),
+      )
+    }
+  }
+
+  const sleepGoalBedTime = hasExplicitGoalBed
+    ? (asTimeOrNull(parsed.sleepGoalBedTime) as string)
+    : reminderTime
+
+  let sleepGoalWakeTime = hasExplicitGoalWake
+    ? (asTimeOrNull(parsed.sleepGoalWakeTime) as string)
+    : shiftTimeByHours(sleepGoalBedTime, sleepGoalHours) || '06:30'
+
+  sleep = sleep.map((entry) =>
+    inferSleepTimes(entry, sleepGoalBedTime, sleepGoalWakeTime),
+  )
+
   return {
     heightCm: Math.max(0, Math.min(250, Math.round(Number(parsed.heightCm) || 0))),
     sex: normalizeSex(parsed.sex),
     weightGoalKg: Math.max(0, Math.min(400, Number(parsed.weightGoalKg) || 0)),
     sleepReminderEnabled: Boolean(parsed.sleepReminderEnabled),
-    sleepReminderTime:
-      typeof parsed.sleepReminderTime === 'string' && parsed.sleepReminderTime
-        ? parsed.sleepReminderTime
-        : '22:30',
+    sleepReminderTime: reminderTime,
+    sleepGoalHours,
+    sleepGoalBedTime,
+    sleepGoalWakeTime,
+    windDownEnabled: parsed.windDownEnabled !== false,
+    windDownMinutes: Math.max(
+      10,
+      Math.min(180, Math.round(Number(parsed.windDownMinutes) || 45)),
+    ),
     weeklyGoals: defaultWeeklyGoals(parsed.weeklyGoals),
     metrics: asArray<BodyMetric>(parsed.metrics)
       .map(normalizeMetric)
       .filter((m): m is BodyMetric => Boolean(m)),
-    sleep: asArray<SleepEntry>(parsed.sleep)
-      .map(normalizeSleep)
-      .filter((s): s is SleepEntry => Boolean(s)),
+    sleep,
+    naps: asArray<NapEntry>(parsed.naps)
+      .map(normalizeNap)
+      .filter((n): n is NapEntry => Boolean(n))
+      .slice(0, 200),
+    sleepRoutine: mergeDefaultSleepRoutine(
+      routineRaw.length > 0
+        ? routineRaw
+        : DEFAULT_SLEEP_ROUTINE.map((r) => ({ ...r })),
+    ),
+    sleepRoutineDone: routineDone,
+    sleepChallenge: normalizeChallenge(parsed.sleepChallenge),
     exams: asArray<LabExam>(parsed.exams)
       .map(normalizeExam)
       .filter((e): e is LabExam => Boolean(e)),
-    checkIns: asArray<HealthCheckIn>(parsed.checkIns)
-      .map(normalizeCheckIn)
-      .filter((c): c is HealthCheckIn => Boolean(c)),
+    checkIns,
     medications: asArray<Medication>(parsed.medications)
       .map(normalizeMedication)
       .filter((m): m is Medication => Boolean(m)),
@@ -1176,22 +1489,57 @@ function mergeById<T extends { id: string }>(
   return [...map.values()]
 }
 
+function mergeSleepLists(
+  local: SleepEntry[],
+  remote: SleepEntry[],
+  preferRemote: boolean,
+): SleepEntry[] {
+  const byId = new Map<string, SleepEntry>()
+  const primary = preferRemote ? remote : local
+  const secondary = preferRemote ? local : remote
+  for (const entry of secondary) byId.set(entry.id, entry)
+  for (const entry of primary) {
+    const prev = byId.get(entry.id)
+    byId.set(entry.id, prev ? mergeSleepFields(prev, entry) : entry)
+  }
+  return dedupeSleepByDay([...byId.values()])
+}
+
 export function mergeSaudeSafe(
   local: SaudeState,
   remote: SaudeState,
   preferRemote: boolean,
 ): SaudeState {
   const profile = preferRemote ? remote : local
-  return {
+  const routineDone = {
+    ...(preferRemote ? local.sleepRoutineDone : remote.sleepRoutineDone),
+    ...(preferRemote ? remote.sleepRoutineDone : local.sleepRoutineDone),
+  }
+  return normalizeSaude({
     heightCm: profile.heightCm || local.heightCm || remote.heightCm,
     sex: profile.sex ?? local.sex ?? remote.sex,
     weightGoalKg:
       profile.weightGoalKg || local.weightGoalKg || remote.weightGoalKg,
     sleepReminderEnabled: profile.sleepReminderEnabled,
     sleepReminderTime: profile.sleepReminderTime || '22:30',
+    sleepGoalHours: profile.sleepGoalHours || local.sleepGoalHours || 8,
+    sleepGoalBedTime:
+      profile.sleepGoalBedTime || local.sleepGoalBedTime || '22:30',
+    sleepGoalWakeTime:
+      profile.sleepGoalWakeTime || local.sleepGoalWakeTime || '06:30',
+    windDownEnabled: profile.windDownEnabled,
+    windDownMinutes: profile.windDownMinutes || local.windDownMinutes || 45,
     weeklyGoals: defaultWeeklyGoals(profile.weeklyGoals),
     metrics: mergeById(local.metrics, remote.metrics, preferRemote),
-    sleep: mergeById(local.sleep, remote.sleep, preferRemote),
+    sleep: mergeSleepLists(local.sleep, remote.sleep, preferRemote),
+    naps: mergeById(local.naps, remote.naps, preferRemote).slice(0, 200),
+    sleepRoutine: mergeDefaultSleepRoutine(
+      mergeById(local.sleepRoutine, remote.sleepRoutine, preferRemote),
+    ),
+    sleepRoutineDone: routineDone,
+    sleepChallenge: preferRemote
+      ? remote.sleepChallenge ?? local.sleepChallenge
+      : local.sleepChallenge ?? remote.sleepChallenge,
     exams: mergeById(local.exams, remote.exams, preferRemote),
     checkIns: mergeById(local.checkIns, remote.checkIns, preferRemote),
     medications: mergeById(local.medications, remote.medications, preferRemote),
@@ -1203,7 +1551,7 @@ export function mergeSaudeSafe(
       0,
       40,
     ),
-  }
+  })
 }
 
 function normalizeGameSession(raw: unknown): GameSession | null {

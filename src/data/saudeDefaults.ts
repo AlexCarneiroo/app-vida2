@@ -9,9 +9,30 @@ import type {
   QuickConsult,
   SaudeState,
   SleepEntry,
+  SleepHabitFlags,
   SleepQuality,
+  SleepRoutineItem,
   WeeklyHealthGoals,
 } from '../types/saude'
+
+export const DEFAULT_SLEEP_ROUTINE: SleepRoutineItem[] = [
+  { id: 'scr_phone', label: 'Guardar o telemóvel', enabled: true, order: 0 },
+  { id: 'scr_lights', label: 'Luzes baixas / modo noite', enabled: true, order: 1 },
+  { id: 'scr_caffeine', label: 'Sem cafeína depois das 15h', enabled: true, order: 2 },
+  { id: 'scr_hygiene', label: 'Higiene / dentes', enabled: true, order: 3 },
+  { id: 'scr_stretch', label: 'Alongar ou respirar 5 min', enabled: true, order: 4 },
+  { id: 'scr_journal', label: 'Anotar 1 pensamento do dia', enabled: false, order: 5 },
+]
+
+export function emptySleepHabits(): SleepHabitFlags {
+  return {
+    phoneBeforeBed: false,
+    caffeineLate: false,
+    exerciseLate: false,
+    alcohol: false,
+    heavyMeal: false,
+  }
+}
 
 export const emptySaudeState = (): SaudeState => ({
   heightCm: 0,
@@ -19,9 +40,18 @@ export const emptySaudeState = (): SaudeState => ({
   weightGoalKg: 0,
   sleepReminderEnabled: false,
   sleepReminderTime: '22:30',
+  sleepGoalHours: 8,
+  sleepGoalBedTime: '22:30',
+  sleepGoalWakeTime: '06:30',
+  windDownEnabled: true,
+  windDownMinutes: 45,
   weeklyGoals: { waterDaysTarget: 5, sleepDaysTarget: 5 },
   metrics: [],
   sleep: [],
+  naps: [],
+  sleepRoutine: DEFAULT_SLEEP_ROUTINE.map((r) => ({ ...r })),
+  sleepRoutineDone: {},
+  sleepChallenge: null,
   exams: [],
   checkIns: [],
   medications: [],
@@ -109,20 +139,163 @@ export function sleepHoursBetween(bedTime: string, wakeTime: string): number | n
 export function createSleep(input: {
   hours: number
   quality: SleepQuality
+  readiness?: SleepQuality
   dateKey?: string
   bedTime?: string | null
   wakeTime?: string | null
+  latencyMin?: number
+  awakenings?: number
+  habits?: Partial<SleepHabitFlags>
   note?: string
 }): SleepEntry {
+  const habits = input.habits
+    ? { ...emptySleepHabits(), ...input.habits }
+    : undefined
   return {
     id: uid('sleep'),
     dateKey: input.dateKey || dateKey(),
     hours: Math.max(0, Math.min(24, Math.round(input.hours * 10) / 10)),
     quality: input.quality,
+    readiness: input.readiness,
     bedTime: input.bedTime || null,
     wakeTime: input.wakeTime || null,
+    latencyMin:
+      input.latencyMin !== undefined
+        ? Math.max(0, Math.min(180, Math.round(input.latencyMin)))
+        : undefined,
+    awakenings:
+      input.awakenings !== undefined
+        ? Math.max(0, Math.min(30, Math.round(input.awakenings)))
+        : undefined,
+    habits,
     note: input.note?.trim() || undefined,
   }
+}
+
+export type SleepStats = {
+  loggedDays: number
+  avgHours: number | null
+  avgQuality: number | null
+  avgReadiness: number | null
+  streak: number
+  idealNights: number
+  bestNight: SleepEntry | null
+  worstNight: SleepEntry | null
+}
+
+/** Estatísticas de sono nos últimos `days` dias (inclui hoje). */
+export function sleepStats(
+  sleep: SleepEntry[],
+  today: string,
+  days = 14,
+): SleepStats {
+  const keys = Array.from({ length: days }, (_, i) =>
+    shiftDateKey(today, i - (days - 1)),
+  )
+  const entries = keys
+    .map((key) => sleepForDay(sleep, key))
+    .filter((e): e is SleepEntry => Boolean(e))
+
+  const avg = (nums: number[]) =>
+    nums.length
+      ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 10) / 10
+      : null
+
+  let streak = 0
+  for (let i = 0; i < days; i++) {
+    const key = shiftDateKey(today, -i)
+    const entry = sleepForDay(sleep, key)
+    if (!entry || entry.hours < 6.5) break
+    streak += 1
+  }
+
+  const byHours = [...entries].sort((a, b) => b.hours - a.hours)
+  return {
+    loggedDays: entries.length,
+    avgHours: avg(entries.map((e) => e.hours)),
+    avgQuality: avg(entries.map((e) => e.quality)),
+    avgReadiness: avg(
+      entries
+        .map((e) => e.readiness)
+        .filter((v): v is SleepQuality => typeof v === 'number'),
+    ),
+    streak,
+    idealNights: entries.filter((e) => e.hours >= 7 && e.hours <= 9).length,
+    bestNight: byHours[0] ?? null,
+    worstNight: byHours[byHours.length - 1] ?? null,
+  }
+}
+
+export function buildSleepInsights(
+  stats: SleepStats,
+  sleepDebt: number,
+  weeklyTarget: number,
+  sleepWeekDays: number,
+): HealthInsight[] {
+  const list: HealthInsight[] = []
+  if (stats.loggedDays === 0) {
+    list.push({
+      id: 'sleep-empty',
+      tone: 'info',
+      title: 'Começa o diário',
+      body: 'Regista deitar, acordar e como te sentiste. Em poucos dias aparece o padrão.',
+    })
+    return list
+  }
+
+  if (stats.avgHours !== null) {
+    list.push({
+      id: 'sleep-avg',
+      tone:
+        stats.avgHours >= 7 && stats.avgHours <= 9
+          ? 'ok'
+          : stats.avgHours < 6.5
+            ? 'warn'
+            : 'info',
+      title: 'Média recente',
+      body: `${stats.avgHours}h nas últimas noites · qualidade média ${stats.avgQuality ?? '—'}/5.`,
+    })
+  }
+
+  if (sleepDebt >= 3) {
+    list.push({
+      id: 'sleep-debt-panel',
+      tone: 'warn',
+      title: 'Débito acumulado',
+      body: `~${sleepDebt}h em falta. Duas noites cedo reduzem o cansaço mais do que um “compensar” no fim de semana.`,
+    })
+  }
+
+  list.push({
+    id: 'sleep-challenge',
+    tone: sleepWeekDays >= weeklyTarget ? 'ok' : 'info',
+    title: 'Desafio da semana',
+    body: `${sleepWeekDays}/${weeklyTarget} noites entre 7–9h. ${
+      sleepWeekDays >= weeklyTarget
+        ? 'Meta fechada — mantém o ritmo.'
+        : `Faltam ${Math.max(0, weeklyTarget - sleepWeekDays)} noites no alvo.`
+    }`,
+  })
+
+  if (stats.streak >= 3) {
+    list.push({
+      id: 'sleep-streak',
+      tone: 'ok',
+      title: 'Sequência',
+      body: `${stats.streak} noites seguidas com ≥6.5h. Consistência bate volume pontual.`,
+    })
+  }
+
+  if (stats.avgReadiness !== null && stats.avgReadiness <= 2.5) {
+    list.push({
+      id: 'sleep-readiness',
+      tone: 'warn',
+      title: 'Disposição baixa',
+      body: 'Acordas sem energia. Revisa horário de ecrã e cafeína depois das 15h.',
+    })
+  }
+
+  return list.slice(0, 5)
 }
 
 export function createExam(input: {
@@ -213,11 +386,36 @@ export function latestMetric(metrics: BodyMetric[]): BodyMetric | null {
   )[0]
 }
 
+function sleepEntryRichness(entry: SleepEntry): number {
+  let score = 0
+  if (entry.hours > 0) score += 2
+  if (entry.bedTime) score += 1
+  if (entry.wakeTime) score += 1
+  if (entry.readiness != null) score += 1
+  if (entry.latencyMin != null) score += 1
+  if (entry.awakenings != null) score += 1
+  if (entry.habits) score += 1
+  if (entry.note) score += 1
+  return score
+}
+
 export function sleepForDay(
   sleep: SleepEntry[],
   day: string,
 ): SleepEntry | null {
-  return sleep.find((s) => s.dateKey === day) ?? null
+  let best: SleepEntry | null = null
+  for (const entry of sleep) {
+    if (entry.dateKey !== day) continue
+    if (
+      !best ||
+      sleepEntryRichness(entry) > sleepEntryRichness(best) ||
+      (sleepEntryRichness(entry) === sleepEntryRichness(best) &&
+        entry.id > best.id)
+    ) {
+      best = entry
+    }
+  }
+  return best
 }
 
 export function checkInForDay(

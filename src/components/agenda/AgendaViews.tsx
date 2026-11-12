@@ -1,8 +1,8 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import type { CSSProperties } from 'react'
-import { agendaCategoryEmoji } from '../../data/agendaDefaults'
 import {
   dayLoadScore,
+  layoutTimedItems,
   minutesToTime,
   monthGrid,
   parseTimeToMinutes,
@@ -11,6 +11,7 @@ import {
 import { dateKey } from '../../lib/date'
 import type { AgendaItem } from '../../types/agenda'
 import { staggerContainer, staggerItem } from '../ui/PageTransition'
+import { AgendaIcon } from './AgendaIcon'
 
 const DAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 6)
@@ -24,6 +25,89 @@ function statusLabel(status: AgendaItem['status']) {
   if (status === 'atrasado') return 'atrasado'
   if (status === 'cancelado') return 'cancelado'
   return 'pendente'
+}
+
+function blockGeometry(col: number, cols: number): CSSProperties {
+  if (cols <= 1) {
+    return {
+      left: '0.3rem',
+      right: '0.3rem',
+      width: 'auto',
+    }
+  }
+  const gap = 0.18
+  const inset = 0.22
+  const width = `calc((100% - ${inset * 2}rem - ${(cols - 1) * gap}rem) / ${cols})`
+  const left = `calc(${inset}rem + ${col} * ((100% - ${inset * 2}rem - ${(cols - 1) * gap}rem) / ${cols} + ${gap}rem))`
+  return { left, width, right: 'auto' }
+}
+
+function AgendaEventBlock({
+  item,
+  compact,
+  showTime,
+  dense,
+  className,
+  style,
+  onSelect,
+  motionProps,
+}: {
+  item: AgendaItem
+  compact?: boolean
+  showTime?: boolean
+  dense?: boolean
+  className?: string
+  style?: CSSProperties
+  onSelect: (item: AgendaItem) => void
+  motionProps?: Record<string, unknown>
+}) {
+  const iconSize = dense || compact ? 12 : 14
+  const content = (
+    <>
+      <span className="agenda-block__row">
+        <AgendaIcon
+          className="agenda-block__icon"
+          categoryId={item.categoryId}
+          source={item.source}
+          size={iconSize}
+        />
+        <strong className="agenda-block__title">{item.title}</strong>
+      </span>
+      {showTime && !item.allDay && item.startTime && (
+        <em className="agenda-block__time">
+          {item.startTime}
+          {item.endTime ? `–${item.endTime}` : ''}
+        </em>
+      )}
+    </>
+  )
+
+  if (motionProps) {
+    return (
+      <motion.button
+        type="button"
+        className={className}
+        style={style}
+        onClick={() => onSelect(item)}
+        title={`${item.title}${item.startTime ? ` · ${item.startTime}–${item.endTime ?? ''}` : ''}`}
+        {...motionProps}
+      >
+        {content}
+      </motion.button>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className={className}
+      style={style}
+      onClick={() => onSelect(item)}
+      title={`${item.title}${item.startTime ? ` · ${item.startTime}–${item.endTime ?? ''}` : ''}`}
+    >
+      {content}
+    </button>
+  )
 }
 
 export function AgendaMonthView({
@@ -76,9 +160,7 @@ export function AgendaMonthView({
             >
               <div className="agenda-month__top">
                 <strong>{day.getDate()}</strong>
-                {items.length > 0 && (
-                  <small>{items.length}</small>
-                )}
+                {items.length > 0 && <small>{items.length}</small>}
               </div>
               <div className="agenda-month__dots">
                 {dots.map((item) => (
@@ -90,12 +172,16 @@ export function AgendaMonthView({
                 ))}
               </div>
               {items.length > 0 && (
-                <em>
-                  <span aria-hidden>
-                    {agendaCategoryEmoji(items[0].categoryId, items[0].source)}{' '}
+                <em className="agenda-month__preview">
+                  <AgendaIcon
+                    categoryId={items[0].categoryId}
+                    source={items[0].source}
+                    size={10}
+                  />
+                  <span>
+                    {items[0].title}
+                    {items.length > 1 ? ` +${items.length - 1}` : ''}
                   </span>
-                  {items[0].title}
-                  {items.length > 1 ? ` +${items.length - 1}` : ''}
                 </em>
               )}
             </motion.button>
@@ -134,8 +220,9 @@ export function AgendaWeekView({
       <div className="agenda-week__cols">
         {days.map((day) => {
           const key = dateKey(day)
-          const items = (itemsByDay.get(key) ?? []).filter((i) => !i.allDay)
-          const allDay = (itemsByDay.get(key) ?? []).filter((i) => i.allDay)
+          const dayItems = itemsByDay.get(key) ?? []
+          const allDay = dayItems.filter((i) => i.allDay)
+          const laidOut = layoutTimedItems(dayItems)
           return (
             <div
               key={key}
@@ -148,58 +235,38 @@ export function AgendaWeekView({
               {allDay.length > 0 && (
                 <div className="agenda-week__allday">
                   {allDay.slice(0, 2).map((item) => (
-                    <button
+                    <AgendaEventBlock
                       key={item.id}
-                      type="button"
+                      item={item}
+                      dense
                       className={`agenda-block is-allday ${statusClass(item.status)}`}
                       style={{ '--evt': item.color } as CSSProperties}
-                      onClick={() => onSelectItem(item)}
-                    >
-                      <span aria-hidden>
-                        {agendaCategoryEmoji(item.categoryId, item.source)}
-                      </span>{' '}
-                      {item.title}
-                    </button>
+                      onSelect={onSelectItem}
+                    />
                   ))}
                 </div>
               )}
               <div className="agenda-week__track">
-                {items.map((item) => {
-                  const start = parseTimeToMinutes(item.startTime) ?? 6 * 60
-                  const end = parseTimeToMinutes(item.endTime) ?? start + 60
-                  const duration = Math.max(15, end - start)
-                  const top = ((start - 6 * 60) / (16 * 60)) * 100
-                  const height = Math.max(
-                    duration <= 30 ? 4.5 : 5.5,
-                    (duration / (16 * 60)) * 100,
-                  )
+                {laidOut.map((slot) => {
+                  const compact = slot.duration <= 40 || slot.cols > 1
                   return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`agenda-block is-day${duration <= 35 ? ' is-compact' : ''} ${statusClass(item.status)}`}
+                    <AgendaEventBlock
+                      key={slot.item.id}
+                      item={slot.item}
+                      compact={compact}
+                      dense
+                      showTime={slot.duration > 45 && slot.cols === 1}
+                      className={`agenda-block is-day${compact ? ' is-compact' : ''} ${statusClass(slot.item.status)}`}
                       style={
                         {
-                          '--evt': item.color,
-                          top: `${top}%`,
-                          height: `${height}%`,
+                          '--evt': slot.item.color,
+                          top: `${slot.top}%`,
+                          height: `${slot.height}%`,
+                          ...blockGeometry(slot.col, slot.cols),
                         } as CSSProperties
                       }
-                      onClick={() => onSelectItem(item)}
-                      title={`${item.title} · ${item.startTime}–${item.endTime}`}
-                    >
-                      <strong>
-                        <span aria-hidden>
-                          {agendaCategoryEmoji(item.categoryId, item.source)}{' '}
-                        </span>
-                        {item.title}
-                      </strong>
-                      {duration > 35 && (
-                        <span>
-                          {item.startTime}–{item.endTime}
-                        </span>
-                      )}
-                    </button>
+                      onSelect={onSelectItem}
+                    />
                   )
                 })}
               </div>
@@ -236,6 +303,7 @@ export function AgendaDayView({
   const load = dayLoadScore(items)
   const today = dateKey() === dayKey
   const reduce = useReducedMotion()
+  const laidOut = layoutTimedItems(items)
   const nowTop =
     today && nowMinutes >= 6 * 60 && nowMinutes <= 22 * 60
       ? ((nowMinutes - 6 * 60) / (16 * 60)) * 100
@@ -252,23 +320,23 @@ export function AgendaDayView({
       <div className="agenda-day__meta">
         <p>
           {load.count === 0
-            ? 'Dia livre para respirar 🌤️'
+            ? 'Dia livre'
             : `${load.count} atividade${load.count === 1 ? '' : 's'} · ${Math.round(load.minutes / 60)}h ocupadas`}
         </p>
         {workStart && workEnd ? (
           <span className="agenda-pill is-work">
-            💼 {workStart}–{workEnd}
+            Trabalho {workStart}–{workEnd}
           </span>
         ) : null}
         <span className="agenda-pill is-sleep">
-          😴 {sleepStart}–{sleepEnd}
+          Sono {sleepStart}–{sleepEnd}
         </span>
         {load.overloaded && (
-          <span className="agenda-pill is-warn">⚡ Dia carregado</span>
+          <span className="agenda-pill is-warn">Dia carregado</span>
         )}
         {conflicts.length > 0 && (
           <span className="agenda-pill is-warn">
-            ⚠️ {conflicts.length} conflito{conflicts.length > 1 ? 's' : ''}
+            {conflicts.length} conflito{conflicts.length > 1 ? 's' : ''}
           </span>
         )}
       </div>
@@ -297,49 +365,37 @@ export function AgendaDayView({
               <span>{minutesToTime(nowMinutes)}</span>
             </div>
           )}
-          {items
-            .filter((i) => !i.allDay)
-            .map((item, index) => {
-              const start = parseTimeToMinutes(item.startTime) ?? 8 * 60
-              const end = parseTimeToMinutes(item.endTime) ?? start + 45
-              const duration = Math.max(15, end - start)
-              const top = ((start - 6 * 60) / (16 * 60)) * 100
-              const height = Math.max(
-                duration <= 30 ? 4.8 : 6,
-                (duration / (16 * 60)) * 100,
-              )
-              const compact = duration <= 35
-              return (
-                <motion.button
-                  key={item.id}
-                  type="button"
-                  initial={reduce ? false : { opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: index * 0.03, duration: 0.22 }}
-                  className={`agenda-block is-day${compact ? ' is-compact' : ''} ${statusClass(item.status)}${conflictIds.has(item.id) ? ' is-conflict' : ''}`}
-                  style={
-                    {
-                      '--evt': item.color,
-                      top: `${top}%`,
-                      height: `${height}%`,
-                    } as CSSProperties
-                  }
-                  onClick={() => onSelectItem(item)}
-                >
-                  <strong>
-                    <span aria-hidden>
-                      {agendaCategoryEmoji(item.categoryId, item.source)}{' '}
-                    </span>
-                    {item.title}
-                  </strong>
-                  {!compact && (
-                    <span>
-                      {item.startTime}–{item.endTime}
-                    </span>
-                  )}
-                </motion.button>
-              )
-            })}
+          {laidOut.map((slot, index) => {
+            const compact = slot.duration <= 35 || slot.cols > 2
+            const showTime = slot.duration > 35 && slot.cols <= 2
+            return (
+              <AgendaEventBlock
+                key={slot.item.id}
+                item={slot.item}
+                compact={compact}
+                showTime={showTime}
+                className={`agenda-block is-day${compact ? ' is-compact' : ''} ${statusClass(slot.item.status)}${conflictIds.has(slot.item.id) ? ' is-conflict' : ''}`}
+                style={
+                  {
+                    '--evt': slot.item.color,
+                    top: `${slot.top}%`,
+                    height: `${slot.height}%`,
+                    ...blockGeometry(slot.col, slot.cols),
+                  } as CSSProperties
+                }
+                onSelect={onSelectItem}
+                motionProps={
+                  reduce
+                    ? undefined
+                    : {
+                        initial: { opacity: 0, y: 4 },
+                        animate: { opacity: 1, y: 0 },
+                        transition: { delay: index * 0.025, duration: 0.2 },
+                      }
+                }
+              />
+            )
+          })}
         </div>
       </div>
 
@@ -357,10 +413,12 @@ export function AgendaDayView({
               >
                 <span style={{ background: item.color }} />
                 <div>
-                  <strong>
-                    <span aria-hidden>
-                      {agendaCategoryEmoji(item.categoryId, item.source)}{' '}
-                    </span>
+                  <strong className="agenda-list-item__title">
+                    <AgendaIcon
+                      categoryId={item.categoryId}
+                      source={item.source}
+                      size={14}
+                    />
                     {item.title}
                   </strong>
                   <em>{item.detail || 'Dia inteiro'}</em>
@@ -409,7 +467,7 @@ export function AgendaListView({
     >
       {items.length === 0 && (
         <div className="agenda-empty">
-          <span aria-hidden>📭</span>
+          <AgendaIcon categoryId="outros" size={28} />
           <p>Nenhum compromisso neste período.</p>
           <em>Adiciona um ou muda o filtro.</em>
         </div>
@@ -439,10 +497,12 @@ export function AgendaListView({
             >
               <span style={{ background: item.color }} />
               <div>
-                <strong>
-                  <span aria-hidden>
-                    {agendaCategoryEmoji(item.categoryId, item.source)}{' '}
-                  </span>
+                <strong className="agenda-list-item__title">
+                  <AgendaIcon
+                    categoryId={item.categoryId}
+                    source={item.source}
+                    size={14}
+                  />
                   {item.title}
                 </strong>
                 <em>

@@ -1,19 +1,32 @@
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+function appPackageVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync('./package.json', 'utf8')) as {
+      version?: string
+    }
+    return String(pkg.version || '0.0.0')
+  } catch {
+    return '0.0.0'
+  }
+}
 
 function appRelease() {
   try {
     return execSync('git rev-list --count HEAD', { encoding: 'utf8' }).trim()
   } catch {
-    return '1'
+    return '0'
   }
 }
 
 export default defineConfig({
   define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appPackageVersion()),
     'import.meta.env.VITE_APP_RELEASE': JSON.stringify(appRelease()),
   },
   build: {

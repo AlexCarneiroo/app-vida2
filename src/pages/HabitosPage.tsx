@@ -974,7 +974,7 @@ export function HabitosPage() {
               </div>
             </div>
 
-            <div className="section-label">
+      <div className="section-label">
               <h2>Hoje</h2>
               <span>
                 {doneCount}/{total}
@@ -989,14 +989,14 @@ export function HabitosPage() {
                     ? 'Ainda sem hábitos. Cria o primeiro ou usa uma ideia rápida.'
                     : 'Nada agendado para hoje — desfruta do descanso.'}
                 </p>
-              </div>
+      </div>
             ) : (
-              <motion.div
-                className="surface habit-list"
-                variants={staggerContainer}
-                initial="hidden"
-                animate="show"
-              >
+      <motion.div
+        className="surface habit-list"
+        variants={staggerContainer}
+        initial="hidden"
+        animate="show"
+      >
                 {dueToday.map((h) => (
                   <HabitRow
                     key={h.id}
@@ -1075,7 +1075,7 @@ export function HabitosPage() {
                           <span>
                             {HABIT_CATEGORY_LABELS[goal.category]}
                             {goal.detail ? ` · ${goal.detail}` : ''}
-                          </span>
+            </span>
                           {linked.length > 0 && (
                             <em>
                               Hábito
@@ -1141,8 +1141,8 @@ export function HabitosPage() {
                 <div className="surface habit-list habit-list--rest">
                   {restingToday.map((h) => (
                     <div key={h.id} className="habit-row is-rest">
-                      <span className="habit-info">
-                        <strong>{h.name}</strong>
+            <span className="habit-info">
+              <strong>{h.name}</strong>
                         <span>
                           {habitMetaLine(
                             h,
@@ -1159,7 +1159,7 @@ export function HabitosPage() {
                       </span>
                       <span className="streak">
                         <Flame size={12} /> {h.streak}d
-                      </span>
+            </span>
                       <div className="habit-row__tools">
                         <button
                           type="button"
@@ -1318,6 +1318,6 @@ function HabitRow({
           aria-label={`Excluir ${h.name}`}
         />
       </div>
-    </motion.div>
+      </motion.div>
   )
 }
