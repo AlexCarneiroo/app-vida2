@@ -252,6 +252,13 @@ export function useAgenda() {
     [update],
   )
 
+  const setShowHabits = useCallback(
+    (showHabits: boolean) => {
+      update((prev) => ({ ...prev, showHabits }))
+    },
+    [update],
+  )
+
   const eventById = useMemo(
     () => new Map(state.events.map((e) => [e.id, e])),
     [state.events],
@@ -278,6 +285,7 @@ export function useAgenda() {
     upsertException,
     removeException,
     setSleepWindow,
+    setShowHabits,
   }
 }
 

@@ -106,6 +106,7 @@ export function neededData(s: NotifSettings): DataName[] {
   if (s.habitos.on || s.resumo.on) names.add('habitos')
   if (s.contas.on) names.add('financas')
   if (s.rotina.on) names.add('rotina')
+  if (s.compras.on) names.add('compras')
   return [...names]
 }
 

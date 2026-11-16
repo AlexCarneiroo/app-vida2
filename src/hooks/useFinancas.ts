@@ -85,10 +85,8 @@ export function useFinancas() {
       if (cancelled) return
       const latestLocal = loadFinancasPersisted(STORAGE_KEY, emptyFinancasState)
       let finalDoc = next
-      if (
-        latestLocal.updatedAt > localAtStart.updatedAt &&
-        latestLocal.updatedAt >= next.updatedAt
-      ) {
+      // Não comparar com next.updatedAt (usa Date.now() e apagava edições recentes).
+      if (latestLocal.updatedAt > localAtStart.updatedAt) {
         finalDoc = await hydrateFromCloud(
           'financas',
           latestLocal,
@@ -104,6 +102,13 @@ export function useFinancas() {
       updatedAtRef.current = finalDoc.updatedAt
       touchPersisted(STORAGE_KEY, finalDoc.data, finalDoc.updatedAt)
       hydratedRef.current = true
+      if (
+        finalDoc.data.transactions.length > 0 ||
+        finalDoc.data.goals.length > 0 ||
+        (finalDoc.data.bills?.length ?? 0) > 0
+      ) {
+        void flushCloudSave('financas', finalDoc.data, finalDoc.updatedAt)
+      }
     })()
     return () => {
       cancelled = true
@@ -178,7 +183,7 @@ export function useFinancas() {
       dateKey?: string
     }) => {
       const amount = Math.abs(Number(input.amount) || 0)
-      if (amount <= 0) return
+      if (amount <= 0) return undefined
 
       const tx: Transaction = {
         id: makeId('tx'),
@@ -194,6 +199,7 @@ export function useFinancas() {
         ...prev,
         transactions: [tx, ...prev.transactions].slice(0, 500),
       }))
+      return tx.id
     },
     [],
   )

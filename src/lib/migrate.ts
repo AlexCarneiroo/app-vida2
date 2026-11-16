@@ -19,6 +19,7 @@ import {
 } from '../data/saudeDefaults'
 import { minutesToTime, parseTimeToMinutes } from './agendaEngine'
 import { normalizeAgendaState } from '../data/agendaDefaults'
+import { normalizeAisle } from '../data/comprasDefaults'
 import { emptyRotinaState } from '../data/rotinaDefaults'
 import { exercisesForMuscle } from '../data/exerciseLibrary'
 import { normalizeExerciseName } from './treinoStats'
@@ -52,6 +53,13 @@ import type {
   AgendaState,
   AvailabilityException,
 } from '../types/agenda'
+import type {
+  ComprasState,
+  NeededItem,
+  ShoppingAisle,
+  ShoppingItem,
+  ShoppingList,
+} from '../types/compras'
 import type { RotinaState, RoutineBlock } from '../types/rotina'
 import type {
   BodyMetric,
@@ -1722,5 +1730,185 @@ export function mergeAgendaSafe(
     exceptions,
     sleepStart: preferRemote ? remote.sleepStart : local.sleepStart,
     sleepEnd: preferRemote ? remote.sleepEnd : local.sleepEnd,
+    showHabits: preferRemote ? remote.showHabits : local.showHabits,
   }
+}
+
+function normalizeNeededItem(raw: unknown): NeededItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<NeededItem>
+  const name = o.name?.trim()
+  if (!name) return null
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : `need_legacy_${name.toLowerCase().replace(/\s+/g, '_')}`
+  return {
+    id,
+    name,
+    note: typeof o.note === 'string' && o.note.trim() ? o.note.trim() : undefined,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeShoppingItem(raw: unknown): ShoppingItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<ShoppingItem>
+  const name = o.name?.trim()
+  if (!name) return null
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : `item_legacy_${name.toLowerCase().replace(/\s+/g, '_')}`
+  const qty = Number(o.qty)
+  const price = Number(o.estimatedPrice)
+  return {
+    id,
+    name,
+    qty: Number.isFinite(qty) && qty > 0 ? Math.round(qty * 100) / 100 : undefined,
+    unit: typeof o.unit === 'string' && o.unit.trim() ? o.unit.trim() : undefined,
+    checked: Boolean(o.checked),
+    estimatedPrice:
+      Number.isFinite(price) && price > 0
+        ? Math.round(price * 100) / 100
+        : undefined,
+    aisle: normalizeAisle(o.aisle),
+    fromNeededId:
+      typeof o.fromNeededId === 'string' && o.fromNeededId
+        ? o.fromNeededId
+        : undefined,
+    createdAt: o.createdAt || new Date().toISOString(),
+  }
+}
+
+function normalizeShoppingList(raw: unknown): ShoppingList | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<ShoppingList>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const items = asArray<ShoppingItem>(o.items)
+    .map(normalizeShoppingItem)
+    .filter((i): i is ShoppingItem => Boolean(i))
+    .slice(0, 200)
+  const spent = Number(o.totalSpent)
+  return {
+    id: o.id,
+    title: o.title?.trim() || 'Compras',
+    status: o.status === 'done' ? 'done' : 'active',
+    items,
+    createdAt: o.createdAt || new Date().toISOString(),
+    completedAt:
+      typeof o.completedAt === 'string' ? o.completedAt : o.completedAt ?? null,
+    financeTxId:
+      typeof o.financeTxId === 'string' ? o.financeTxId : o.financeTxId ?? null,
+    totalSpent:
+      Number.isFinite(spent) && spent > 0
+        ? Math.round(spent * 100) / 100
+        : null,
+    financeCategory:
+      o.financeCategory === 'alimentação' || o.financeCategory === 'compras'
+        ? o.financeCategory
+        : null,
+  }
+}
+
+export function normalizeCompras(raw: unknown): ComprasState {
+  const parsed =
+    raw && typeof raw === 'object' ? (raw as Partial<ComprasState>) : {}
+  const needed = asArray<NeededItem>(parsed.needed)
+    .map(normalizeNeededItem)
+    .filter((n): n is NeededItem => Boolean(n))
+    .slice(0, 100)
+  const lists = asArray<ShoppingList>(parsed.lists)
+    .map(normalizeShoppingList)
+    .filter((l): l is ShoppingList => Boolean(l))
+    .slice(0, 40)
+  let activeListId =
+    typeof parsed.activeListId === 'string' ? parsed.activeListId : null
+  if (activeListId && !lists.some((l) => l.id === activeListId)) {
+    activeListId = null
+  }
+  if (!activeListId) {
+    activeListId = lists.find((l) => l.status === 'active')?.id ?? null
+  }
+  const aisleMemory: Record<string, ShoppingAisle> = {}
+  if (parsed.aisleMemory && typeof parsed.aisleMemory === 'object') {
+    for (const [key, value] of Object.entries(parsed.aisleMemory)) {
+      if (!key.trim()) continue
+      aisleMemory[key] = normalizeAisle(value)
+    }
+  }
+
+  return {
+    needed,
+    lists,
+    activeListId,
+    aisleMemory,
+  }
+}
+
+export function migrateComprasDoc(input: unknown): PersistedDoc<ComprasState> {
+  return migrateEnvelope(
+    input,
+    normalizeCompras,
+    (o) => 'needed' in o || 'lists' in o || 'activeListId' in o,
+  )
+}
+
+function mergeShoppingLists(
+  local: ShoppingList[],
+  remote: ShoppingList[],
+  preferRemote: boolean,
+): ShoppingList[] {
+  const map = new Map<string, ShoppingList>()
+  const primary = preferRemote ? remote : local
+  const secondary = preferRemote ? local : remote
+  for (const list of secondary) map.set(list.id, list)
+  for (const list of primary) {
+    const prev = map.get(list.id)
+    if (!prev) {
+      map.set(list.id, list)
+      continue
+    }
+    map.set(list.id, {
+      ...prev,
+      ...list,
+      items: mergeById(prev.items, list.items, preferRemote).slice(0, 200),
+      completedAt: list.completedAt || prev.completedAt || null,
+      financeTxId: list.financeTxId || prev.financeTxId || null,
+      totalSpent:
+        list.totalSpent != null || prev.totalSpent != null
+          ? Math.max(list.totalSpent ?? 0, prev.totalSpent ?? 0) || null
+          : null,
+      status:
+        list.status === 'done' || prev.status === 'done' ? 'done' : 'active',
+    })
+  }
+  return [...map.values()]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 40)
+}
+
+export function mergeComprasSafe(
+  local: ComprasState,
+  remote: ComprasState,
+  preferRemote: boolean,
+): ComprasState {
+  const lists = mergeShoppingLists(local.lists, remote.lists, preferRemote)
+  let activeListId = preferRemote
+    ? remote.activeListId || local.activeListId
+    : local.activeListId || remote.activeListId
+  if (activeListId && !lists.some((l) => l.id === activeListId)) {
+    activeListId = lists.find((l) => l.status === 'active')?.id ?? null
+  }
+  const aisleMemory = {
+    ...(preferRemote ? local.aisleMemory : remote.aisleMemory),
+    ...(preferRemote ? remote.aisleMemory : local.aisleMemory),
+  }
+
+  return normalizeCompras({
+    needed: mergeById(local.needed, remote.needed, preferRemote).slice(0, 100),
+    lists,
+    activeListId,
+    aisleMemory,
+  })
 }

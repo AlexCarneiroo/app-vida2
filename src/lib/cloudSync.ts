@@ -15,6 +15,7 @@ import {
 } from './dataVersion'
 import {
   mergeAgendaSafe,
+  mergeComprasSafe,
   mergeFinancasSafe,
   mergeHabitosSafe,
   mergeJogosSafe,
@@ -23,6 +24,7 @@ import {
   mergeSaudeSafe,
   mergeTreinoSafe,
   migrateAgendaDoc,
+  migrateComprasDoc,
   migrateFinancasDoc,
   migrateHabitosDoc,
   migrateJogosDoc,
@@ -32,6 +34,7 @@ import {
   migrateTreinoDoc,
 } from './migrate'
 import type { AgendaState } from '../types/agenda'
+import type { ComprasState } from '../types/compras'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
 import type { JogosState } from '../types/jogos'
@@ -49,6 +52,7 @@ type AppModuleState =
   | SaudeState
   | JogosState
   | AgendaState
+  | ComprasState
 
 type SyncMeta = {
   treinoUpdatedAt: number
@@ -59,6 +63,7 @@ type SyncMeta = {
   saudeUpdatedAt: number
   jogosUpdatedAt: number
   agendaUpdatedAt: number
+  comprasUpdatedAt: number
   uid: string | null
   schemaVersion: number
 }
@@ -114,6 +119,7 @@ function readMeta(): SyncMeta {
     saudeUpdatedAt: 0,
     jogosUpdatedAt: 0,
     agendaUpdatedAt: 0,
+    comprasUpdatedAt: 0,
     uid: null,
     schemaVersion: SCHEMA_VERSION,
   })
@@ -186,6 +192,8 @@ function migrateCloudEnvelope(
       return migrateJogosDoc(raw)
     case 'agenda':
       return migrateAgendaDoc(raw)
+    case 'compras':
+      return migrateComprasDoc(raw)
   }
 }
 
@@ -387,6 +395,13 @@ export async function hydrateFromCloud<T extends AppModuleState>(
       mergedData = mergeAgendaSafe(
         localDoc.data as AgendaState,
         cloudTyped.data as AgendaState,
+        preferRemote,
+      ) as T
+      break
+    case 'compras':
+      mergedData = mergeComprasSafe(
+        localDoc.data as ComprasState,
+        cloudTyped.data as ComprasState,
         preferRemote,
       ) as T
       break

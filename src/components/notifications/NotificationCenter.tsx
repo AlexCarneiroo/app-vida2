@@ -38,6 +38,9 @@ export function NotificationCenter() {
   const visible = onlyUnread ? items.filter((item) => !item.read) : items
 
   async function handleClear() {
+    setOpen(false)
+    // Espera o modal fechar para o confirm/toast ficar visível por cima.
+    await new Promise((resolve) => window.setTimeout(resolve, 220))
     const ok = await confirm({
       title: 'Limpar notificações?',
       message: 'Todo o histórico desta central será removido deste aparelho.',

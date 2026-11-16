@@ -25,6 +25,7 @@
   --habitos: #c4a484;
   --rotina: #7eb8ff;
   --nutricao: var(--jade);
+  --compras: #7ec8c3;
   --saude: #5ec4b6;
   --jogos: #e09a6a;
 
@@ -100,6 +101,7 @@
   --habitos: #9a7350;
   --rotina: #3b82c4;
   --nutricao: var(--jade);
+  --compras: #2a9d8f;
   --saude: #0f9b8e;
   --jogos: #c46d3a;
 
@@ -11822,6 +11824,45 @@ button.activity-map__cell:focus-visible {
   color: var(--ink-muted);
 }
 
+.agenda-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  margin: 0.55rem 0 1rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--ink-rgb) 4%, transparent);
+  cursor: pointer;
+}
+
+.agenda-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.agenda-toggle strong {
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.agenda-toggle em {
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+
+.agenda-toggle input {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+  accent-color: #5b8def;
+}
+
 .agenda-detail__status {
   margin-top: 0.75rem !important;
   text-transform: capitalize;
@@ -12073,5 +12114,354 @@ button.activity-map__cell:focus-visible {
   .agenda-block {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* —— Compras —— */
+.compras-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.compras-tab-count {
+  margin-left: 0.3rem;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 800;
+  opacity: 0.85;
+}
+
+.compras-add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  align-items: center;
+}
+
+.compras-add input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.compras-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.compras-chip {
+  border: 1px solid color-mix(in srgb, var(--compras) 35%, var(--border));
+  background: color-mix(in srgb, var(--compras) 12%, transparent);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.compras-chip:hover {
+  border-color: var(--compras);
+}
+
+.compras-empty {
+  margin: 0.4rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.compras-needed-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.compras-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.compras-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.85rem 0.9rem;
+}
+
+.compras-row__main {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.compras-check {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 9px;
+  border: 1.5px solid color-mix(in srgb, var(--compras) 55%, var(--border));
+  background: transparent;
+  color: var(--on-accent);
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.compras-check.is-done {
+  background: var(--compras);
+  border-color: var(--compras);
+}
+
+.compras-row__title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.compras-row__title strong {
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.compras-row__title span {
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.compras-row.is-checked {
+  opacity: 0.72;
+}
+
+.compras-row.is-checked .compras-row__title strong {
+  text-decoration: line-through;
+  color: var(--ink-muted);
+}
+
+.compras-row__trash {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 0;
+}
+
+.compras-row__trash:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink-rgb) 8%, transparent);
+}
+
+.compras-row__meta {
+  display: grid;
+  grid-template-columns: 4.4rem 5.2rem 1fr;
+  gap: 0.45rem;
+  padding-left: calc(1.7rem + 0.75rem);
+}
+
+.compras-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.compras-field > span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.compras-field input,
+.compras-field select {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.compras-field input {
+  text-align: center;
+}
+
+.compras-field--aisle select {
+  text-align: left;
+}
+
+@media (max-width: 420px) {
+  .compras-row__meta {
+    grid-template-columns: 1fr 1fr;
+    padding-left: 0;
+  }
+
+  .compras-field--aisle {
+    grid-column: 1 / -1;
+  }
+}
+
+.compras-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border-color: color-mix(in srgb, var(--compras) 28%, transparent);
+}
+
+.compras-summary strong {
+  display: block;
+  margin: 0.15rem 0;
+  font-size: 1.05rem;
+}
+
+.compras-summary span {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
+.compras-summary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.compras-aisle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.compras-aisle h3 {
+  margin: 0.15rem 0 0;
+  padding-left: 0.15rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--compras);
+  font-weight: 800;
+}
+
+.compras-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.compras-history__card {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+}
+
+.compras-history__card strong {
+  display: block;
+}
+
+.compras-history__card span {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+
+.compras-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: end center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.compras-modal {
+  width: min(420px, 100%);
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: calc(var(--nav-h) + 0.5rem);
+}
+
+.compras-modal__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--compras);
+}
+
+.compras-modal__head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.compras-modal p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.compras-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--ink-muted);
+}
+
+.compras-modal__field input,
+.compras-modal__field select {
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+@media (min-width: 720px) {
+  .compras-modal-backdrop {
+    place-items: center;
+  }
+
+  .compras-modal {
+    margin-bottom: 0;
   }
 }

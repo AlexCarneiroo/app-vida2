@@ -142,7 +142,9 @@ export function needsIosInstall() {
  * permite tocar para abrir o app). Em desenvolvimento, sem SW, cai no
  * construtor clássico.
  */
-export async function showNotice(notice: Notice): Promise<boolean> {
+export async function showNotice(
+  notice: Notice & { id?: string },
+): Promise<boolean> {
   if (currentPermission() !== 'granted') return false
   void addInboxNotice(notice)
   const options: NotificationOptions = {
@@ -151,7 +153,7 @@ export async function showNotice(notice: Notice): Promise<boolean> {
     icon: '/pwa-192.png',
     badge: '/pwa-192.png',
     lang: 'pt-BR',
-    data: { url: notice.url ?? '/' },
+    data: { url: notice.url ?? '/', inboxId: notice.id },
   }
   try {
     const reg = await navigator.serviceWorker?.getRegistration()

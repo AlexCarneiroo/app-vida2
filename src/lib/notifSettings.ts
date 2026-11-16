@@ -12,6 +12,7 @@ export type NotifSettings = {
   habitos: { on: boolean; streakGuard: boolean }
   rotina: { on: boolean }
   contas: { on: boolean; time: string }
+  compras: { on: boolean; time: string }
   sono: { on: boolean; time: string }
   resumo: { on: boolean; time: string }
 }
@@ -34,6 +35,7 @@ export const DEFAULT_NOTIF_SETTINGS: NotifSettings = {
   habitos: { on: true, streakGuard: true },
   rotina: { on: false },
   contas: { on: true, time: '09:00' },
+  compras: { on: true, time: '10:00' },
   sono: { on: false, time: '22:30' },
   resumo: { on: false, time: '21:00' },
 }
@@ -85,6 +87,10 @@ export function normalizeNotifSettings(raw: unknown): NotifSettings {
     contas: {
       on: bool(sub('contas').on, d.contas.on),
       time: cleanTime(sub('contas').time, d.contas.time),
+    },
+    compras: {
+      on: bool(sub('compras').on, d.compras.on),
+      time: cleanTime(sub('compras').time, d.compras.time),
     },
     sono: {
       on: bool(sub('sono').on, d.sono.on),

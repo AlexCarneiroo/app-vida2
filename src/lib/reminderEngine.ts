@@ -1,4 +1,6 @@
 import { isHabitDueOn } from '../data/habitosDefaults'
+import { pendingCount } from '../data/comprasDefaults'
+import type { ComprasState } from '../types/compras'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
 import type { NutricaoState } from '../types/nutricao'
@@ -19,6 +21,7 @@ export type DataName =
   | 'nutricao'
   | 'financas'
   | 'rotina'
+  | 'compras'
 
 export type ReminderStates = {
   treino: TreinoState
@@ -26,6 +29,7 @@ export type ReminderStates = {
   nutricao: NutricaoState
   financas: FinancasState
   rotina: RotinaState
+  compras: ComprasState
 }
 
 /** Lê o estado de um módulo (null se não existir). */
@@ -98,17 +102,25 @@ function dueAgua(ctx: ReminderContext, c: Clock): DueReminder[] {
 
   const state = ctx.read('nutricao')
   const goal = Number(state?.waterGoal) || 0
-  const drank = Number(state?.waterByDay?.[c.today]) || 0
+  const byDay =
+    state?.waterByDay && typeof state.waterByDay === 'object'
+      ? state.waterByDay
+      : {}
+  const drank = Math.max(0, Number(byDay[c.today]) || 0)
   if (goal <= 0 || drank >= goal) return []
 
   const left = goal - drank
   const pct = Math.round((drank / goal) * 100)
+  const body =
+    drank <= 0
+      ? `Ainda sem registo hoje. Meta ${fmtLiters(goal)} — começa com um gole.`
+      : `Já bebeste ${fmtLiters(drank)} (${pct}%). Faltam ${fmtLiters(left)} para a meta.`
   return [
     {
       id: `agua:${c.today}:${slot}`,
       tag: 'agua',
       title: 'Hora de beber água 💧',
-      body: `Faltam ${fmtLiters(left)} para a meta de hoje (${pct}% feito).`,
+      body,
       url: '/nutricao',
     },
   ]
@@ -123,6 +135,8 @@ function dueHabitos(ctx: ReminderContext, c: Clock): DueReminder[] {
   const pending = habits.filter(
     (h) =>
       isHabitDueOn(h, c.today) &&
+      !h.doneToday &&
+      !h.skippedToday &&
       h.lastDoneDateKey !== c.today &&
       h.lastSkipDateKey !== c.today,
   )
@@ -228,6 +242,39 @@ function dueContas(ctx: ReminderContext, c: Clock): DueReminder[] {
   ]
 }
 
+function dueCompras(ctx: ReminderContext, c: Clock): DueReminder[] {
+  const { settings: s } = ctx
+  if (!s.compras.on || !inWindow(c.nowMin, minutesOf(s.compras.time))) return []
+  const state = ctx.read('compras')
+  if (!state) return []
+  const active =
+    state.lists?.find((l) => l.id === state.activeListId) ??
+    state.lists?.find((l) => l.status === 'active')
+  const pending = pendingCount(active)
+  const needed = state.needed?.length ?? 0
+  if (pending <= 0 && needed <= 0) return []
+  const parts: string[] = []
+  if (pending > 0) {
+    parts.push(
+      pending === 1 ? '1 item por comprar' : `${pending} itens por comprar`,
+    )
+  }
+  if (needed > 0) {
+    parts.push(
+      needed === 1 ? '1 marcado em Falta' : `${needed} marcados em Falta`,
+    )
+  }
+  return [
+    {
+      id: `compras:${c.today}`,
+      tag: 'compras',
+      title: 'Lista de compras 🛒',
+      body: parts.join(' · '),
+      url: '/compras',
+    },
+  ]
+}
+
 function dueSono(ctx: ReminderContext, c: Clock): DueReminder[] {
   const { settings: s } = ctx
   if (!s.sono.on || !inWindow(c.nowMin, minutesOf(s.sono.time))) return []
@@ -256,7 +303,11 @@ function dueResumo(ctx: ReminderContext, c: Clock): DueReminder[] {
   const nutri = ctx.read('nutricao')
   const goal = Number(nutri?.waterGoal) || 0
   if (goal > 0) {
-    const drank = Number(nutri?.waterByDay?.[c.today]) || 0
+    const byDay =
+      nutri?.waterByDay && typeof nutri.waterByDay === 'object'
+        ? nutri.waterByDay
+        : {}
+    const drank = Math.max(0, Number(byDay[c.today]) || 0)
     parts.push(`Água ${fmtLiters(drank)}/${fmtLiters(goal)}`)
   }
 
@@ -264,8 +315,33 @@ function dueResumo(ctx: ReminderContext, c: Clock): DueReminder[] {
     isHabitDueOn(h, c.today),
   )
   if (due.length > 0) {
-    const done = due.filter((h) => h.lastDoneDateKey === c.today).length
+    const done = due.filter(
+      (h) =>
+        h.doneToday ||
+        h.skippedToday ||
+        h.lastDoneDateKey === c.today ||
+        h.lastSkipDateKey === c.today,
+    ).length
     parts.push(`Hábitos ${done}/${due.length}`)
+  }
+
+  const rotina = ctx.read('rotina')
+  const blocks = rotina?.blocks ?? []
+  if (blocks.length > 0) {
+    const done =
+      rotina?.dayKey === c.today
+        ? blocks.filter((b) => b.doneToday).length
+        : 0
+    parts.push(`Rotina ${done}/${blocks.length}`)
+  }
+
+  const compras = ctx.read('compras')
+  if (compras) {
+    const active =
+      compras.lists?.find((l) => l.id === compras.activeListId) ??
+      compras.lists?.find((l) => l.status === 'active')
+    const pending = pendingCount(active)
+    if (pending > 0) parts.push(`Compras ${pending} pendentes`)
   }
 
   if (parts.length === 0) return []
@@ -280,21 +356,134 @@ function dueResumo(ctx: ReminderContext, c: Clock): DueReminder[] {
   ]
 }
 
+function clockFrom(now: Date): Clock {
+  return {
+    today: dateKey(now),
+    nowMin: now.getHours() * 60 + now.getMinutes(),
+    dow: now.getDay(),
+    now,
+  }
+}
+
+/**
+ * Cartões de progresso para a central (sempre com dados atuais).
+ * Não disparam push — só atualizam o texto que o utilizador vê.
+ */
+export function collectLiveStatusNotices(ctx: ReminderContext): DueReminder[] {
+  if (!ctx.settings.enabled) return []
+  const c = clockFrom(ctx.now)
+  const out: DueReminder[] = []
+
+  const nutri = ctx.read('nutricao')
+  const waterGoal = Number(nutri?.waterGoal) || 0
+  if (waterGoal > 0) {
+    const byDay =
+      nutri?.waterByDay && typeof nutri.waterByDay === 'object'
+        ? nutri.waterByDay
+        : {}
+    const drank = Math.max(0, Number(byDay[c.today]) || 0)
+    const pct = Math.min(100, Math.round((drank / waterGoal) * 100))
+    out.push({
+      id: `live:agua:${c.today}`,
+      tag: 'live-agua',
+      title: 'Água hoje',
+      body:
+        drank <= 0
+          ? `0 / ${fmtLiters(waterGoal)} — ainda sem registo`
+          : drank >= waterGoal
+            ? `${fmtLiters(drank)} / ${fmtLiters(waterGoal)} · meta feita ✓`
+            : `${fmtLiters(drank)} / ${fmtLiters(waterGoal)} · ${pct}%`,
+      url: '/nutricao',
+    })
+  }
+
+  const habits = ctx.read('habitos')?.habits ?? []
+  const dueHabits = habits.filter((h) => isHabitDueOn(h, c.today))
+  if (dueHabits.length > 0) {
+    const done = dueHabits.filter(
+      (h) =>
+        h.doneToday ||
+        h.skippedToday ||
+        h.lastDoneDateKey === c.today ||
+        h.lastSkipDateKey === c.today,
+    ).length
+    out.push({
+      id: `live:habitos:${c.today}`,
+      tag: 'live-habitos',
+      title: 'Hábitos hoje',
+      body: `${done}/${dueHabits.length} concluídos`,
+      url: '/habitos',
+    })
+  }
+
+  const treino = ctx.read('treino')
+  const template = treino?.plan?.find((t) => t.dayOfWeek === c.dow)
+  if (template) {
+    const done = Boolean(treino?.weekDone?.[c.today])
+    out.push({
+      id: `live:treino:${c.today}`,
+      tag: 'live-treino',
+      title: 'Treino hoje',
+      body: done
+        ? `${template.name} · concluído ✓`
+        : treino?.active
+          ? `${template.name} · em andamento`
+          : `${template.name} · por fazer`,
+      url: '/treino',
+    })
+  }
+
+  const rotina = ctx.read('rotina')
+  const blocks = rotina?.blocks ?? []
+  if (blocks.length > 0) {
+    const sameDay = rotina?.dayKey === c.today
+    const done = sameDay ? blocks.filter((b) => b.doneToday).length : 0
+    out.push({
+      id: `live:rotina:${c.today}`,
+      tag: 'live-rotina',
+      title: 'Rotina hoje',
+      body: `${done}/${blocks.length} blocos`,
+      url: '/rotina',
+    })
+  }
+
+  const compras = ctx.read('compras')
+  if (compras) {
+    const active =
+      compras.lists?.find((l) => l.id === compras.activeListId) ??
+      compras.lists?.find((l) => l.status === 'active')
+    const pending = pendingCount(active)
+    const needed = compras.needed?.length ?? 0
+    if (pending > 0 || needed > 0) {
+      out.push({
+        id: `live:compras:${c.today}`,
+        tag: 'live-compras',
+        title: 'Compras',
+        body: [
+          pending > 0 ? `${pending} na lista` : null,
+          needed > 0 ? `${needed} em Falta` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        url: '/compras',
+      })
+    }
+  }
+
+  return out
+}
+
 /** Tudo o que deve ser avisado neste instante (ainda por filtrar repetidos). */
 export function collectDueReminders(ctx: ReminderContext): DueReminder[] {
   if (!ctx.settings.enabled) return []
-  const clock: Clock = {
-    today: dateKey(ctx.now),
-    nowMin: ctx.now.getHours() * 60 + ctx.now.getMinutes(),
-    dow: ctx.now.getDay(),
-    now: ctx.now,
-  }
+  const clock = clockFrom(ctx.now)
   return [
     ...dueTreino(ctx, clock),
     ...dueAgua(ctx, clock),
     ...dueHabitos(ctx, clock),
     ...dueRotina(ctx, clock),
     ...dueContas(ctx, clock),
+    ...dueCompras(ctx, clock),
     ...dueSono(ctx, clock),
     ...dueResumo(ctx, clock),
   ]

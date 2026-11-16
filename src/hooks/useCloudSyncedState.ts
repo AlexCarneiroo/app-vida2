@@ -8,6 +8,7 @@ import { type CloudCollection, type PersistedDoc } from '../lib/dataVersion'
 import { touchPersisted } from '../lib/persist'
 import { useAuth } from './useAuth'
 import type { AgendaState } from '../types/agenda'
+import type { ComprasState } from '../types/compras'
 import type { FinancasState } from '../types/financas'
 import type { HabitosState } from '../types/habitos'
 import type { JogosState } from '../types/jogos'
@@ -25,6 +26,7 @@ type AppModuleState =
   | SaudeState
   | JogosState
   | AgendaState
+  | ComprasState
 
 type Options<T extends AppModuleState> = {
   collection: CloudCollection
@@ -57,13 +59,11 @@ export function useCloudSyncedState<T extends AppModuleState>({
       const next = await hydrateFromCloud(collection, localAtStart, isEmpty)
       if (cancelled) return
 
-      // Edições offline durante o pull: o localStorage pode estar mais novo
+      // Edições durante o pull: o merge da nuvem usa Date.now() no updatedAt,
+      // por isso NÃO comparar com next.updatedAt (apagava água/hábitos recentes).
       const latestLocal = load()
       let finalDoc = next
-      if (
-        latestLocal.updatedAt > localAtStart.updatedAt &&
-        latestLocal.updatedAt >= next.updatedAt
-      ) {
+      if (latestLocal.updatedAt > localAtStart.updatedAt) {
         finalDoc = await hydrateFromCloud(collection, latestLocal, isEmpty)
       }
 
@@ -73,6 +73,9 @@ export function useCloudSyncedState<T extends AppModuleState>({
       touchPersisted(storageKey, finalDoc.data, finalDoc.updatedAt)
       hydratedRef.current = true
       hydratingRef.current = false
+      if (!isEmpty(finalDoc.data)) {
+        void flushCloudSave(collection, finalDoc.data, finalDoc.updatedAt)
+      }
     })()
     return () => {
       cancelled = true
@@ -85,8 +88,11 @@ export function useCloudSyncedState<T extends AppModuleState>({
     const at = Date.now()
     updatedAtRef.current = at
     touchPersisted(storageKey, state, at)
+    // Durante o hydrate inicial, não sobe para a nuvem (evita corrida),
+    // mas o localStorage fica sempre atualizado para os lembretes lerem.
     if (hydratedRef.current && !hydratingRef.current) {
-      scheduleCloudSave(collection, state, at)
+      // Debounce curto: lembretes (água, hábitos, resumo…) leem a nuvem.
+      scheduleCloudSave(collection, state, at, 280)
     }
   }, [state, collection, storageKey])
 

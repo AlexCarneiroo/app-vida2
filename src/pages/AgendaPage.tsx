@@ -80,6 +80,7 @@ export function AgendaPage() {
     upsertException,
     removeException,
     setSleepWindow,
+    setShowHabits,
     eventById,
   } = useAgenda()
   const { plan, state: treinoState } = useTreino()
@@ -139,7 +140,7 @@ export function AgendaPage() {
       toKey: range.to,
       plan,
       weekDone: treinoState.weekDone,
-      habits,
+      habits: state.showHabits ? habits : [],
       rotinaBlocks,
       todayKey,
     })
@@ -158,6 +159,7 @@ export function AgendaPage() {
     return all
   }, [
     state.events,
+    state.showHabits,
     categories,
     range,
     plan,
@@ -693,6 +695,19 @@ export function AgendaPage() {
                   </div>
                 ))}
               </div>
+
+              <h2>Integrações</h2>
+              <label className="agenda-toggle">
+                <span>
+                  <strong>Mostrar hábitos</strong>
+                  <em>Aparecem na agenda nos dias em que estão ativos</em>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={state.showHabits !== false}
+                  onChange={(e) => setShowHabits(e.target.checked)}
+                />
+              </label>
 
               <h2>Sono</h2>
               <div className="agenda-form__row">

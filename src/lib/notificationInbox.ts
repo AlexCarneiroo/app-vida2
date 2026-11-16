@@ -69,25 +69,34 @@ export async function addInboxNotice(
   try {
     const db = await openDb()
     const createdAt = notice.createdAt ?? Date.now()
+    const id =
+      notice.id ??
+      `${notice.tag || 'notice'}:${createdAt}:${Math.random().toString(36).slice(2, 7)}`
+    const store = db.transaction(STORE, 'readwrite').objectStore(STORE)
+    const prev = (await requestResult(store.get(id))) as InboxNotice | undefined
     const entry: InboxNotice = {
-      id:
-        notice.id ??
-        `${notice.tag || 'notice'}:${createdAt}:${Math.random().toString(36).slice(2, 7)}`,
+      id,
       title: notice.title,
       body: notice.body,
       url: notice.url ?? '/',
       tag: notice.tag ?? 'vida',
-      createdAt,
-      read: false,
+      // Atualiza o texto sem marcar de novo como não lida se já existia.
+      createdAt: prev?.createdAt ?? createdAt,
+      read: prev ? prev.read : false,
     }
-    await requestResult(
-      db.transaction(STORE, 'readwrite').objectStore(STORE).put(entry),
-    )
+    await requestResult(store.put(entry))
     db.close()
     announce()
   } catch {
     // A notificação do sistema continua a funcionar mesmo sem IndexedDB.
   }
+}
+
+/** Atualiza (ou cria) um aviso com id estável — para mostrar resultados ao vivo. */
+export async function upsertInboxNotice(
+  notice: Notice & { id: string; createdAt?: number },
+) {
+  return addInboxNotice(notice)
 }
 
 export async function markInboxNoticeRead(id: string) {

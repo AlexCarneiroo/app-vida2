@@ -8,6 +8,7 @@ import {
   PiggyBank,
   Play,
   Repeat,
+  ShoppingCart,
   Sparkles,
   UtensilsCrossed,
 } from 'lucide-react'
@@ -24,6 +25,7 @@ import { useNutricao } from '../hooks/useNutricao'
 import { useAgenda } from '../hooks/useAgenda'
 import { useRotina } from '../hooks/useRotina'
 import { useJogos } from '../hooks/useJogos'
+import { useCompras } from '../hooks/useCompras'
 import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
 import { expandEvents } from '../lib/agendaEngine'
@@ -99,6 +101,11 @@ export function HomePage() {
     todayCheckIn,
   } = useSaude()
   const { playsToday: jogosPlaysToday, streak: jogosStreak } = useJogos()
+  const {
+    pending: comprasPending,
+    needed: comprasNeeded,
+    activeList: comprasActive,
+  } = useCompras()
   const nutriLog = nutriState.dayLog ?? {}
   const goals = financeState.goals
 
@@ -288,6 +295,36 @@ export function HomePage() {
         iconFg: 'var(--nutricao)',
       },
       {
+        to: '/compras',
+        title: 'Compras',
+        desc:
+          comprasPending > 0
+            ? `${comprasPending} por comprar`
+            : comprasNeeded.length > 0
+              ? `${comprasNeeded.length} em falta`
+              : comprasActive
+                ? 'Lista pronta'
+                : 'Lista de compras',
+        meta:
+          comprasPending > 0
+            ? `${comprasPending}`
+            : comprasNeeded.length > 0
+              ? `${comprasNeeded.length}`
+              : '—',
+        progress:
+          comprasActive && comprasActive.items.length > 0
+            ? Math.round(
+                ((comprasActive.items.length - comprasPending) /
+                  comprasActive.items.length) *
+                  100,
+              )
+            : 0,
+        icon: ShoppingCart,
+        bar: 'var(--compras)',
+        iconBg: 'color-mix(in srgb, var(--compras) 16%, transparent)',
+        iconFg: 'var(--compras)',
+      },
+      {
         to: '/saude',
         title: 'Saúde',
         desc: saudeSignals.waterOk ? 'Hidratação em dia' : 'Hidratação',
@@ -333,6 +370,9 @@ export function HomePage() {
       todayAgendaCount,
       todayMacros,
       nutriGoal,
+      comprasPending,
+      comprasNeeded.length,
+      comprasActive,
       saudeScore,
       saudeSignals.waterOk,
       jogosPlaysToday,

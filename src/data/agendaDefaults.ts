@@ -78,6 +78,7 @@ export function emptyAgendaState(): AgendaState {
     exceptions: [],
     sleepStart: '23:00',
     sleepEnd: '07:00',
+    showHabits: true,
   }
 }
 
@@ -214,6 +215,8 @@ export function normalizeAgendaState(raw: unknown): AgendaState {
     exceptions,
     sleepStart: parsed.sleepStart || base.sleepStart,
     sleepEnd: parsed.sleepEnd || base.sleepEnd,
+    showHabits:
+      typeof parsed.showHabits === 'boolean' ? parsed.showHabits : true,
   }
 }
 

@@ -44,6 +44,9 @@ const RelatorioPage = lazy(() =>
 const ConfigPage = lazy(() =>
   import('./pages/ConfigPage').then((m) => ({ default: m.ConfigPage })),
 )
+const ComprasPage = lazy(() =>
+  import('./pages/ComprasPage').then((m) => ({ default: m.ComprasPage })),
+)
 
 function RouteFallback() {
   return (
@@ -107,6 +110,14 @@ function AnimatedRoutes() {
             element={
               <Suspense fallback={<RouteFallback />}>
                 <NutricaoPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="compras"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <ComprasPage />
               </Suspense>
             }
           />

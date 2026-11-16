@@ -4,6 +4,7 @@ import {
   migrateJogosDoc,
   migrateNutricaoDoc,
   migrateAgendaDoc,
+  migrateComprasDoc,
   migrateRotinaDoc,
   migrateSaudeDoc,
   migrateTreinoDoc,
@@ -19,6 +20,7 @@ import type { HabitosState } from '../types/habitos'
 import type { JogosState } from '../types/jogos'
 import type { NutricaoState } from '../types/nutricao'
 import type { AgendaState } from '../types/agenda'
+import type { ComprasState } from '../types/compras'
 import type { RotinaState } from '../types/rotina'
 import type { SaudeState } from '../types/saude'
 import type { TreinoState } from '../types/treino'
@@ -96,6 +98,10 @@ export function loadJogosPersisted(key: string, fallback: JogosState) {
 
 export function loadAgendaPersisted(key: string, fallback: AgendaState) {
   return loadWithMigrate(key, fallback, migrateAgendaDoc)
+}
+
+export function loadComprasPersisted(key: string, fallback: ComprasState) {
+  return loadWithMigrate(key, fallback, migrateComprasDoc)
 }
 
 export function savePersisted<T>(key: string, doc: PersistedDoc<T>) {

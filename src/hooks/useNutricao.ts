@@ -15,8 +15,9 @@ import {
   waterServingSlots,
   weekdayFromDateKey,
 } from '../data/nutricaoDefaults'
+import { flushCloudSave } from '../lib/cloudSync'
 import { dateKey, shiftDateKey } from '../lib/date'
-import { loadNutricaoPersisted } from '../lib/persist'
+import { loadNutricaoPersisted, touchPersisted } from '../lib/persist'
 import type {
   FoodItem,
   FoodMacros,
@@ -159,6 +160,13 @@ export function useNutricao() {
     [update],
   )
 
+  /** Grava água já no storage/nuvem para os lembretes não lerem 0 ml. */
+  const persistWaterNow = useCallback((state: NutricaoState) => {
+    const at = Date.now()
+    touchPersisted(STORAGE_KEY, state, at)
+    void flushCloudSave('nutricao', state, at)
+  }, [])
+
   /** Define ml totais do dia (0 = limpar). */
   const setWaterMl = useCallback(
     (ml: number) => {
@@ -167,10 +175,12 @@ export function useNutricao() {
         const waterByDay = { ...(prev.waterByDay ?? {}) }
         if (next <= 0) delete waterByDay[today]
         else waterByDay[today] = next
-        return { ...prev, waterByDay }
+        const state = { ...prev, waterByDay }
+        persistWaterNow(state)
+        return state
       })
     },
-    [today, update],
+    [today, update, persistWaterNow],
   )
 
   /** Marca n garrafas (n × waterServingMl). Toggle: mesma marca outra vez desce uma. */
@@ -185,10 +195,12 @@ export function useNutricao() {
         const waterByDay = { ...(prev.waterByDay ?? {}) }
         if (next <= 0) delete waterByDay[today]
         else waterByDay[today] = next
-        return { ...prev, waterByDay }
+        const state = { ...prev, waterByDay }
+        persistWaterNow(state)
+        return state
       })
     },
-    [today, update],
+    [today, update, persistWaterNow],
   )
 
   const toggleFavorite = useCallback((food: FoodItem) => {

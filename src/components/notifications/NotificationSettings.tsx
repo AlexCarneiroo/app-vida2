@@ -9,6 +9,7 @@ import {
   ListChecks,
   Moon,
   Send,
+  ShoppingCart,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
@@ -355,6 +356,27 @@ export function NotificationSettings() {
               value={settings.contas.time}
               onChange={(time) =>
                 patch((s) => ({ ...s, contas: { ...s.contas, time } }))
+              }
+            />
+          </Row>
+
+          <Row
+            icon={ShoppingCart}
+            title="Lista de compras"
+            desc="Avisa se há itens por comprar ou marcados em Falta."
+            on={settings.compras.on}
+            onToggle={() =>
+              patch((s) => ({
+                ...s,
+                compras: { ...s.compras, on: !s.compras.on },
+              }))
+            }
+          >
+            <TimeField
+              label="Horário"
+              value={settings.compras.time}
+              onChange={(time) =>
+                patch((s) => ({ ...s, compras: { ...s.compras, time } }))
               }
             />
           </Row>

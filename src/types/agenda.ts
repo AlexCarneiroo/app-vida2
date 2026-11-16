@@ -120,6 +120,8 @@ export type AgendaState = {
   exceptions: AvailabilityException[]
   sleepStart: string
   sleepEnd: string
+  /** Mostrar hábitos do módulo Hábitos na agenda */
+  showHabits: boolean
 }
 
 export type AgendaItemSource =

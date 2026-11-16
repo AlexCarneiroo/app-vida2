@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { upsertInboxNotice } from '../lib/notificationInbox'
 import {
   currentPermission,
   isPushActive,
@@ -16,12 +17,14 @@ import {
 } from '../lib/pushClient'
 import {
   collectDueReminders,
+  collectLiveStatusNotices,
   type DataName,
+  type DueReminder,
   type ReadState,
   type ReminderStates,
 } from '../lib/reminderEngine'
 
-const TICK_MS = 30_000
+const TICK_MS = 20_000
 
 const STORAGE_KEYS: Record<DataName, string> = {
   treino: 'vida.treino.v1',
@@ -29,6 +32,7 @@ const STORAGE_KEYS: Record<DataName, string> = {
   nutricao: 'vida.nutricao.v1',
   financas: 'vida.financas.v1',
   rotina: 'vida.rotina.v1',
+  compras: 'vida.compras.v1',
 }
 
 /** Lê o estado guardado neste aparelho sem migrar nem gravar nada. */
@@ -55,27 +59,32 @@ const readLocal: ReadState = <K extends DataName>(name: K) => {
   }
 }
 
+async function refreshInbox(notices: DueReminder[]) {
+  for (const notice of notices) {
+    await upsertInboxNotice(notice)
+  }
+}
+
 /**
  * Lembretes + push. Montar uma única vez, dentro do Router.
  *
  * - Com push do servidor ativo, é o servidor que avisa (funciona com o app
- *   fechado) e este aparelho não duplica.
- * - Sem push (sem servidor, bloqueado ou iPhone sem instalar), cai no modo
- *   local: verifica a cada 30 s enquanto o app está aberto.
+ *   fechado) e este aparelho não duplica o alerta do sistema.
+ * - Em qualquer modo, a central de notificações é atualizada com os
+ *   resultados atuais (água, hábitos, treino…).
+ * - Sem push: alerta local a cada 20 s enquanto o app está aberto.
  */
 export function useReminderRunner() {
   const settings = useNotifSettings()
   const pushActive = usePushActive()
   const navigate = useNavigate()
 
-  // Liga/desliga o push do servidor conforme o interruptor geral.
   useEffect(() => {
     if (!pushConfigured()) return
     if (settings.enabled) void ensurePush()
     else if (isPushActive()) void disablePush()
   }, [settings.enabled])
 
-  // Mantém as configurações do servidor iguais às deste aparelho.
   const settingsKey = JSON.stringify(settings)
   useEffect(() => {
     if (!pushActive) return
@@ -83,17 +92,27 @@ export function useReminderRunner() {
     return () => window.clearTimeout(timer)
   }, [settingsKey, pushActive])
 
-  // Modo local (fallback): só quando o servidor não está a cuidar dos avisos.
   useEffect(() => {
-    if (!settings.enabled || pushActive) return
+    if (!settings.enabled) return
 
     const tick = () => {
-      if (currentPermission() !== 'granted') return
-      const due = collectDueReminders({
+      const ctx = {
         now: new Date(),
         settings,
         read: readLocal,
-      })
+      }
+
+      // Sempre atualiza a central com o progresso real do dia.
+      const live = collectLiveStatusNotices(ctx)
+      void refreshInbox(live)
+
+      const due = collectDueReminders(ctx)
+      // Atualiza o texto dos avisos devidos (mesmo já disparados).
+      void refreshInbox(due)
+
+      // Alerta do sistema só no modo local (sem push do servidor).
+      if (pushActive) return
+      if (currentPermission() !== 'granted') return
       for (const reminder of due) {
         if (markFired(reminder.id)) void showNotice(reminder)
       }
@@ -104,16 +123,21 @@ export function useReminderRunner() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') tick()
     }
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key) return
+      if (Object.values(STORAGE_KEYS).includes(e.key)) tick()
+    }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', tick)
+    window.addEventListener('storage', onStorage)
     return () => {
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', tick)
+      window.removeEventListener('storage', onStorage)
     }
   }, [settings, pushActive])
 
-  // Tocar numa notificação com o app aberto: o SW pede para abrir a rota.
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     const onMessage = (e: MessageEvent) => {
