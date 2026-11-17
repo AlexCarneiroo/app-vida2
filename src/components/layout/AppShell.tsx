@@ -10,6 +10,7 @@ import { firebaseReady, initAnalytics } from '../../lib/firebase'
 import { useEffect } from 'react'
 import { useReminderRunner } from '../../hooks/useReminderRunner'
 import { NotificationCenter } from '../notifications/NotificationCenter'
+import { ForceSleepLogGate } from '../saude/ForceSleepLogGate'
 
 export function AppShell() {
   useReminderRunner()
@@ -27,6 +28,7 @@ export function AppShell() {
       <AppUpdateBanner />
       <CloudSyncBadge />
       <NotificationCenter />
+      <ForceSleepLogGate />
       <div className="app-shell">
         <AppNav variant="side" />
         <main className="app-main">

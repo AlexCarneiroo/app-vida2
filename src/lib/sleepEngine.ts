@@ -224,6 +224,7 @@ export function buildRichSleepInsights(input: {
       tone: 'info',
       title: 'Primeiro registo',
       body: 'Anota deitar, acordar e como te sentiste. Em 3 noites já aparece o teu padrão.',
+      to: '/saude',
     })
     return list
   }
@@ -246,6 +247,7 @@ export function buildRichSleepInsights(input: {
       tone: 'warn',
       title: 'Débito acumulado',
       body: `~${sleepDebt}h em falta vs ~7.5h. Antecipa o deitar 30–45 min nas próximas 2 noites.`,
+      to: '/saude',
     })
   }
 
@@ -327,6 +329,7 @@ export function buildRichSleepInsights(input: {
       tone: 'info',
       title: 'Sugestão da agenda',
       body: agendaHint,
+      to: '/agenda',
     })
   }
 

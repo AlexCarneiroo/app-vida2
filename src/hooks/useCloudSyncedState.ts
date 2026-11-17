@@ -114,6 +114,19 @@ export function useCloudSyncedState<T extends AppModuleState>({
     }
   }, [collection, storageKey])
 
+  useEffect(() => {
+    const onExternal = (event: Event) => {
+      const detail = (event as CustomEvent<{ storageKey?: string }>).detail
+      if (detail?.storageKey !== storageKey) return
+      const doc = load()
+      if (doc.updatedAt <= updatedAtRef.current) return
+      updatedAtRef.current = doc.updatedAt
+      setState(doc.data)
+    }
+    window.addEventListener('vida:module-external', onExternal)
+    return () => window.removeEventListener('vida:module-external', onExternal)
+  }, [storageKey, load])
+
   const update = useCallback((updater: (prev: T) => T) => {
     setState(updater)
   }, [])

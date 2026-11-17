@@ -7,7 +7,7 @@ import type { NutricaoState } from '../types/nutricao'
 import type { RotinaState } from '../types/rotina'
 import type { TreinoState } from '../types/treino'
 import { daysUntilBill, getBillStatus } from './billStatus'
-import { dateKey, formatBRL } from './date'
+import { dateKey, formatBRL, startOfWeek } from './date'
 import { GRACE_MIN, type Notice, type NotifSettings } from './notifSettings'
 
 /**
@@ -356,6 +356,93 @@ function dueResumo(ctx: ReminderContext, c: Clock): DueReminder[] {
   ]
 }
 
+function dueResumoSemanal(ctx: ReminderContext, c: Clock): DueReminder[] {
+  const { settings: s } = ctx
+  const cfg = s.resumoSemanal
+  if (!cfg?.on) return []
+  if (c.dow !== cfg.weekday) return []
+  if (!inWindow(c.nowMin, minutesOf(cfg.time))) return []
+
+  const weekStart = dateKey(startOfWeek(c.now))
+  const weekEnd = c.today
+  const parts: string[] = []
+
+  const treino = ctx.read('treino')
+  if (treino?.history) {
+    const sessions = treino.history.filter(
+      (w) =>
+        w.completedAt &&
+        w.dateKey >= weekStart &&
+        w.dateKey <= weekEnd,
+    )
+    if (sessions.length > 0) {
+      parts.push(
+        sessions.length === 1
+          ? '1 treino'
+          : `${sessions.length} treinos`,
+      )
+    }
+  }
+
+  const habitsLog = ctx.read('habitos')?.dayLog
+  if (habitsLog && typeof habitsLog === 'object') {
+    let total = 0
+    for (const [key, value] of Object.entries(habitsLog)) {
+      if (key >= weekStart && key <= weekEnd) total += Number(value) || 0
+    }
+    if (total > 0) parts.push(`${total} hábitos`)
+  }
+
+  const nutri = ctx.read('nutricao')
+  const waterGoal = Number(nutri?.waterGoal) || 0
+  if (waterGoal > 0 && nutri?.waterByDay) {
+    let daysOk = 0
+    for (const [key, value] of Object.entries(nutri.waterByDay)) {
+      if (key < weekStart || key > weekEnd) continue
+      if (Number(value) >= waterGoal * 0.9) daysOk += 1
+    }
+    if (daysOk > 0) parts.push(`Água ${daysOk}d ok`)
+  }
+
+  const finance = ctx.read('financas')
+  if (finance?.transactions) {
+    let expense = 0
+    for (const t of finance.transactions) {
+      if (t.dateKey < weekStart || t.dateKey > weekEnd) continue
+      if (t.type === 'expense') expense += t.amount
+    }
+    if (expense > 0) parts.push(`−${formatBRL(expense)}`)
+  }
+
+  const compras = ctx.read('compras')
+  if (compras) {
+    const done = (compras.lists ?? []).filter(
+      (l) =>
+        l.status === 'done' &&
+        l.completedAt &&
+        l.completedAt.slice(0, 10) >= weekStart &&
+        l.completedAt.slice(0, 10) <= weekEnd,
+    ).length
+    if (done > 0) {
+      parts.push(done === 1 ? '1 lista concluída' : `${done} listas`)
+    }
+  }
+
+  if (parts.length === 0) {
+    parts.push('Abre o relatório para rever a semana')
+  }
+
+  return [
+    {
+      id: `resumoSemanal:${weekStart}`,
+      tag: 'resumoSemanal',
+      title: 'A tua semana 📊',
+      body: parts.join(' · '),
+      url: '/relatorio?range=week',
+    },
+  ]
+}
+
 function clockFrom(now: Date): Clock {
   return {
     today: dateKey(now),
@@ -486,5 +573,6 @@ export function collectDueReminders(ctx: ReminderContext): DueReminder[] {
     ...dueCompras(ctx, clock),
     ...dueSono(ctx, clock),
     ...dueResumo(ctx, clock),
+    ...dueResumoSemanal(ctx, clock),
   ]
 }

@@ -12,6 +12,7 @@ import { SaudeCareTab } from '../components/saude/SaudeCareTab'
 import { SaudeExamsTab } from '../components/saude/SaudeExamsTab'
 import { SaudeOverviewTab } from '../components/saude/SaudeOverviewTab'
 import { SleepModule } from '../components/saude/SleepModule'
+import { SleepTimelineSlider } from '../components/saude/SleepTimelineSlider'
 import { emptySleepHabits } from '../data/saudeDefaults'
 import {
   PanelActions,
@@ -551,40 +552,11 @@ export function SaudePage() {
                 toast('Sono registado', 'ok')
               }}
             >
-              <div className="saude-exam-grid">
-                <label className="plan-field">
-                  <span>Deitar</span>
-                  <input
-                    type="time"
-                    value={bedTime}
-                    onChange={(e) => applySleepClock(e.target.value, wakeTime)}
-                    autoFocus
-                  />
-                </label>
-                <label className="plan-field">
-                  <span>Acordar</span>
-                  <input
-                    type="time"
-                    value={wakeTime}
-                    onChange={(e) => applySleepClock(bedTime, e.target.value)}
-                  />
-                </label>
-              </div>
-              <label className="plan-field">
-                <span>Horas dormidas</span>
-                <input
-                  type="number"
-                  min={0.5}
-                  max={16}
-                  step={0.1}
-                  value={sleepHours}
-                  onChange={(e) => setSleepHours(e.target.value)}
-                />
-              </label>
-              <p className="saude-imc-preview">
-                Calculado entre {bedTime} e {wakeTime}
-                {sleepHours ? ` · ${sleepHours} h` : ''}.
-              </p>
+              <SleepTimelineSlider
+                bedTime={bedTime}
+                wakeTime={wakeTime}
+                onChange={applySleepClock}
+              />
               <div className="saude-exam-grid">
                 <label className="plan-field">
                   <span>Minutos até adormecer</span>

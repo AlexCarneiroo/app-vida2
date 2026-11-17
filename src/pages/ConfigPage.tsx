@@ -24,6 +24,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { useNavPrefs } from '../hooks/useNavPrefs'
 import { useTheme, ACCENT_OPTIONS } from '../hooks/useTheme'
 import { NAV_PAGES } from '../lib/navPrefs'
+import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
 import { useConfirm, useToast } from '../components/ui/Feedback'
 import { firebaseReady } from '../lib/firebase'
@@ -54,6 +55,7 @@ export function ConfigPage() {
     setInstructorMode,
     setInstructorQuickMode,
   } = useTreino()
+  const { state: saudeState, setProfile } = useSaude()
   const { toast } = useToast()
   const { confirm } = useConfirm()
   const online = useOnlineStatus()
@@ -441,6 +443,57 @@ export function ConfigPage() {
         >
           Repor padrão
         </button>
+      </section>
+
+      <section className="surface config-panel" aria-label="Registo de sono ao acordar">
+        <h2 className="config-panel__title">Sono ao acordar</h2>
+        <p className="config-theme__hint">
+          À hora escolhida, a app pede o registo da noite e só libera depois de
+          guardares. Podes desligar quando quiseres.
+        </p>
+        <div className="config-pref__row">
+          <div className="config-pref__info">
+            <span className="config-pref__icon" aria-hidden>
+              <Moon size={18} />
+            </span>
+            <div>
+              <strong>Pedir sono ao acordar</strong>
+              <p>Bloqueia a app até registares as horas dormidas.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`config-switch${saudeState.wakeSleepGateEnabled ? ' is-on' : ''}`}
+            role="switch"
+            aria-checked={saudeState.wakeSleepGateEnabled}
+            aria-label="Pedir sono ao acordar"
+            onClick={() => {
+              const next = !saudeState.wakeSleepGateEnabled
+              setProfile({ wakeSleepGateEnabled: next })
+              toast(
+                next
+                  ? 'Registo matinal de sono ativado'
+                  : 'Registo matinal de sono desligado',
+                'ok',
+              )
+            }}
+          >
+            <span className="config-switch__knob" />
+          </button>
+        </div>
+        {saudeState.wakeSleepGateEnabled && (
+          <label className="plan-field" style={{ marginTop: '0.75rem' }}>
+            <span>Horário do pedido</span>
+            <input
+              type="time"
+              value={saudeState.wakeSleepGateTime || '07:00'}
+              onChange={(e) => {
+                if (!e.target.value) return
+                setProfile({ wakeSleepGateTime: e.target.value })
+              }}
+            />
+          </label>
+        )}
       </section>
         </>
       )}

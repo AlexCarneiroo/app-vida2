@@ -10,7 +10,13 @@ export type DailyCoachSignal = {
 export type DailyCoachAction = {
   id: string
   text: string
-  to: '/saude' | '/nutricao' | '/treino' | '/habitos'
+  to:
+    | '/saude'
+    | '/nutricao'
+    | '/treino'
+    | '/habitos'
+    | '/compras'
+    | '/financas'
   cta: string
 }
 
@@ -27,6 +33,8 @@ export type DailyCoachInput = {
   hour: number
   sleepHours: number | null
   sleepDebtHours: number
+  /** Mesma regra do módulo Saúde (sono fraco para treinar). */
+  poorSleepForTraining?: boolean
   waterMl: number
   waterGoalMl: number
   kcal: number
@@ -39,6 +47,8 @@ export type DailyCoachInput = {
   workoutActive: boolean
   workoutDone: boolean
   pendingHabits: number
+  pendingCompras?: number
+  billsDue?: number
 }
 
 const pct = (value: number, goal: number) =>
@@ -102,7 +112,11 @@ export function buildDailyCoach(input: DailyCoachInput): DailyCoachReport {
     })
   }
 
-  if (input.sleepHours !== null && input.sleepHours < 6.5) {
+  const poorSleep =
+    input.poorSleepForTraining === true ||
+    (input.sleepHours !== null && input.sleepHours < 6.5)
+
+  if (poorSleep && input.sleepHours !== null) {
     actions.push({
       id: 'sleep-training',
       text: input.workoutPlanned || input.workoutActive
@@ -154,6 +168,27 @@ export function buildDailyCoach(input: DailyCoachInput): DailyCoachReport {
       text: `Proteína em ${Math.round(proteinProgress * 100)}% da meta. Inclui uma fonte de proteína na próxima refeição.`,
       to: '/nutricao',
       cta: 'Ver nutrição',
+    })
+  }
+
+  if ((input.pendingCompras ?? 0) >= 4) {
+    actions.push({
+      id: 'compras',
+      text: `Tens ${input.pendingCompras} itens de compras em aberto. Fecha a lista ou atualiza o que falta.`,
+      to: '/compras',
+      cta: 'Ver compras',
+    })
+  }
+
+  if ((input.billsDue ?? 0) > 0) {
+    actions.push({
+      id: 'contas',
+      text:
+        input.billsDue === 1
+          ? 'Há 1 conta a vencer ou em atraso.'
+          : `Há ${input.billsDue} contas a vencer ou em atraso.`,
+      to: '/financas',
+      cta: 'Ver finanças',
     })
   }
 

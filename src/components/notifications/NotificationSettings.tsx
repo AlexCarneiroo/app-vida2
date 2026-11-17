@@ -420,6 +420,56 @@ export function NotificationSettings() {
             />
           </Row>
 
+          <Row
+            icon={CalendarClock}
+            title="Resumo semanal"
+            desc="Destaques da semana com link para o relatório."
+            on={settings.resumoSemanal.on}
+            onToggle={() =>
+              patch((s) => ({
+                ...s,
+                resumoSemanal: {
+                  ...s.resumoSemanal,
+                  on: !s.resumoSemanal.on,
+                },
+              }))
+            }
+          >
+            <label className="notif-time">
+              <span>Dia</span>
+              <select
+                value={settings.resumoSemanal.weekday}
+                onChange={(e) =>
+                  patch((s) => ({
+                    ...s,
+                    resumoSemanal: {
+                      ...s.resumoSemanal,
+                      weekday: Number(e.target.value),
+                    },
+                  }))
+                }
+              >
+                <option value={0}>Domingo</option>
+                <option value={1}>Segunda</option>
+                <option value={2}>Terça</option>
+                <option value={3}>Quarta</option>
+                <option value={4}>Quinta</option>
+                <option value={5}>Sexta</option>
+                <option value={6}>Sábado</option>
+              </select>
+            </label>
+            <TimeField
+              label="Horário"
+              value={settings.resumoSemanal.time}
+              onChange={(time) =>
+                patch((s) => ({
+                  ...s,
+                  resumoSemanal: { ...s.resumoSemanal, time },
+                }))
+              }
+            />
+          </Row>
+
           <div className="config-panel__divider" />
 
           <div className="notif-tests">

@@ -1,6 +1,8 @@
 import { MUSCLE_LABELS } from '../data/exerciseLibrary'
 import { CATEGORY_LABELS } from '../data/financasDefaults'
 import { getGameDef } from '../data/jogosDefaults'
+import type { AgendaEvent } from '../types/agenda'
+import type { ShoppingList } from '../types/compras'
 import type {
   RecurringBill,
   SavingsGoal,
@@ -30,6 +32,8 @@ export type ReportSectionId =
   | 'nutricao'
   | 'saude'
   | 'jogos'
+  | 'agenda'
+  | 'compras'
 
 export const REPORT_SECTION_ORDER: ReportSectionId[] = [
   'treino',
@@ -39,6 +43,8 @@ export const REPORT_SECTION_ORDER: ReportSectionId[] = [
   'nutricao',
   'saude',
   'jogos',
+  'agenda',
+  'compras',
 ]
 
 const SECTION_TITLE: Record<ReportSectionId, string> = {
@@ -49,6 +55,8 @@ const SECTION_TITLE: Record<ReportSectionId, string> = {
   nutricao: 'Nutrição',
   saude: 'Saúde',
   jogos: 'Jogos',
+  agenda: 'Agenda',
+  compras: 'Compras',
 }
 
 const SECTION_PATH: Record<ReportSectionId, string> = {
@@ -59,6 +67,8 @@ const SECTION_PATH: Record<ReportSectionId, string> = {
   nutricao: '/nutricao',
   saude: '/saude',
   jogos: '/jogos',
+  agenda: '/agenda',
+  compras: '/compras',
 }
 
 function daysInclusive(startKey: string, endKey: string) {
@@ -214,6 +224,14 @@ export type VidaReportInput = {
   bills: RecurringBill[]
   saude: SaudeState
   gameSessions: GameSession[]
+  agendaEvents?: AgendaEvent[]
+  shoppingLists?: ShoppingList[]
+}
+
+export type CrossHighlight = {
+  id: string
+  text: string
+  to: string
 }
 
 function num(n: number, digits = 0) {
@@ -546,6 +564,31 @@ export function buildVidaReport(input: VidaReportInput): ReportSection[] {
     exams.length === 0
   const gamesEmpty = plays.length === 0
 
+  const agendaEvents = (input.agendaEvents ?? []).filter((e) =>
+    inRange(e.dateKey),
+  )
+  const agendaDone = agendaEvents.filter((e) => e.status === 'concluido').length
+  const agendaOpen = agendaEvents.filter(
+    (e) => e.status === 'pendente' || e.status === 'atrasado',
+  ).length
+  const agendaEmpty = agendaEvents.length === 0
+
+  const shoppingLists = (input.shoppingLists ?? []).filter((l) => {
+    const created = isoDay(l.createdAt)
+    const completed = isoDay(l.completedAt)
+    return (
+      (created && inRange(created)) ||
+      (completed && inRange(completed)) ||
+      (l.status === 'active' && l.items.length > 0)
+    )
+  })
+  const listsDone = shoppingLists.filter((l) => l.status === 'done').length
+  const shopSpent = shoppingLists.reduce(
+    (acc, l) => acc + (Number(l.totalSpent) || 0),
+    0,
+  )
+  const shopEmpty = shoppingLists.length === 0
+
   return [
     section('treino', {
       headline: String(sessions.length),
@@ -682,6 +725,61 @@ export function buildVidaReport(input: VidaReportInput): ReportSection[] {
         : `${plays.length} partida${plays.length === 1 ? '' : 's'}${playMinutes > 0 ? `, ${formatWorkoutDurationLabel(playMinutes)}` : ''}.`,
       empty: gamesEmpty,
     }),
+    section('agenda', {
+      headline: String(agendaEvents.length),
+      caption: 'Eventos na agenda',
+      note: agendaEmpty
+        ? 'Sem eventos neste período.'
+        : `${agendaDone} concluído${agendaDone === 1 ? '' : 's'} · ${agendaOpen} em aberto.`,
+      rows: [
+        { label: 'Total', value: String(agendaEvents.length) },
+        { label: 'Concluídos', value: String(agendaDone) },
+        { label: 'Em aberto', value: String(agendaOpen) },
+      ],
+      items: [...agendaEvents]
+        .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+        .slice(0, 10)
+        .map((e) => ({
+          label: `${formatDateBR(e.dateKey)} · ${e.title}`,
+          value: e.status,
+        })),
+      highlight: agendaEmpty
+        ? null
+        : `${agendaEvents.length} evento${agendaEvents.length === 1 ? '' : 's'} · ${agendaDone} feitos.`,
+      empty: agendaEmpty,
+    }),
+    section('compras', {
+      headline: String(shoppingLists.length),
+      caption: 'Listas de compras',
+      note: shopEmpty
+        ? 'Sem listas neste período.'
+        : shopSpent > 0
+          ? `${listsDone} concluída${listsDone === 1 ? '' : 's'} · ${formatBRL(shopSpent)}.`
+          : `${listsDone} concluída${listsDone === 1 ? '' : 's'}.`,
+      rows: [
+        { label: 'Listas', value: String(shoppingLists.length) },
+        { label: 'Concluídas', value: String(listsDone) },
+        {
+          label: 'Gasto lançado',
+          value: shopSpent > 0 ? formatBRL(shopSpent) : '—',
+        },
+      ],
+      items: shoppingLists.slice(0, 8).map((l) => ({
+        label: l.title,
+        value:
+          l.status === 'done'
+            ? l.totalSpent
+              ? formatBRL(l.totalSpent)
+              : 'Feita'
+            : `${l.items.filter((i) => !i.checked).length} pendentes`,
+      })),
+      highlight: shopEmpty
+        ? null
+        : shopSpent > 0
+          ? `Compras: ${formatBRL(shopSpent)} em ${listsDone} lista${listsDone === 1 ? '' : 's'}.`
+          : `${shoppingLists.length} lista${shoppingLists.length === 1 ? '' : 's'} no período.`,
+      empty: shopEmpty,
+    }),
   ]
 }
 
@@ -690,4 +788,68 @@ export function reportHighlights(sections: ReportSection[]) {
     .map((s) => s.highlight)
     .filter((line): line is string => Boolean(line))
     .slice(0, 4)
+}
+
+/** Destaques que cruzam módulos (sono↔treino, água↔treino, compras↔orçamento). */
+export function crossModuleHighlights(
+  sections: ReportSection[],
+  input: Pick<VidaReportInput, 'saude' | 'history' | 'nutri' | 'shoppingLists' | 'startKey' | 'endKey'>,
+): CrossHighlight[] {
+  const out: CrossHighlight[] = []
+  const byId = new Map(sections.map((s) => [s.id, s]))
+  const inRange = (key: string) =>
+    keyInRange(key, input.startKey, input.endKey)
+
+  const sleep = (input.saude.sleep ?? []).filter((s) => inRange(s.dateKey))
+  const avgSleep =
+    sleep.reduce((a, s) => a + s.hours, 0) / (sleep.length || 1)
+  const sessions = input.history.filter(
+    (w) => w.completedAt && inRange(w.dateKey),
+  )
+  const poorNights = sleep.filter((s) => s.hours < 6.5).length
+
+  if (poorNights >= 2 && sessions.length > 0) {
+    out.push({
+      id: 'sleep-treino',
+      text: `${poorNights} noites fracas e ${sessions.length} treino${sessions.length === 1 ? '' : 's'} — considera carga mais leve.`,
+      to: '/treino',
+    })
+  } else if (avgSleep > 0 && avgSleep < 6.5) {
+    out.push({
+      id: 'sleep-low',
+      text: `Sono médio de ${avgSleep.toFixed(1).replace('.', ',')} h — prioriza recuperação.`,
+      to: '/saude',
+    })
+  }
+
+  const waterGoal = Number(input.nutri.waterGoal) || 0
+  if (waterGoal > 0 && sessions.length > 0) {
+    const byDay = input.nutri.waterByDay ?? {}
+    let lowWaterTrainDays = 0
+    for (const w of sessions) {
+      const drank = Number(byDay[w.dateKey]) || 0
+      if (drank < waterGoal * 0.7) lowWaterTrainDays += 1
+    }
+    if (lowWaterTrainDays >= 2) {
+      out.push({
+        id: 'agua-treino',
+        text: `Em ${lowWaterTrainDays} dias de treino a água ficou abaixo de 70% da meta.`,
+        to: '/nutricao',
+      })
+    }
+  }
+
+  const shopSpent = (input.shoppingLists ?? [])
+    .filter((l) => l.status === 'done' && isoDay(l.completedAt) && inRange(isoDay(l.completedAt)))
+    .reduce((acc, l) => acc + (Number(l.totalSpent) || 0), 0)
+  const finance = byId.get('financas')
+  if (shopSpent > 0 && finance && !finance.empty) {
+    out.push({
+      id: 'compras-financas',
+      text: `Listas de compras lançaram ${formatBRL(shopSpent)} nas Finanças.`,
+      to: '/financas',
+    })
+  }
+
+  return out.slice(0, 4)
 }

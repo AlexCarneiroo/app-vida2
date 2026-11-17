@@ -4,6 +4,7 @@ import {
   Check,
   Plus,
   Search,
+  ShoppingCart,
   Star,
   Trash2,
   UtensilsCrossed,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { MealPlanEditor } from '../components/nutricao/MealPlanEditor'
 import { WaterTrackerCard } from '../components/nutricao/WaterTrackerCard'
 import {
@@ -30,6 +32,7 @@ import {
   filterPantry,
   scaleMacros,
 } from '../data/nutricaoDefaults'
+import { useCompras } from '../hooks/useCompras'
 import { useNutricao } from '../hooks/useNutricao'
 import {
   foodHint,
@@ -50,6 +53,7 @@ function pct(value: number, goal: number) {
 }
 
 export function NutricaoPage() {
+  const { addItemToActive, ensureActiveList } = useCompras()
   const {
     state,
     todayWeekday,
@@ -99,6 +103,35 @@ export function NutricaoPage() {
   /** null = mostrar valor guardado; string = rascunho (permite apagar) */
   const [goalsBottleDraft, setGoalsBottleDraft] = useState<string | null>(null)
   const onPanel = view !== 'home'
+
+  function generateShoppingFromPlan() {
+    const names = new Set<string>()
+    for (const fav of state.favorites ?? []) {
+      const n = fav.name.trim()
+      if (n) names.add(n)
+    }
+    for (const day of [0, 1, 2, 3, 4, 5, 6] as const) {
+      for (const item of mealPlan.days[day] ?? []) {
+        const n = item.food.name.trim()
+        if (n) names.add(n)
+      }
+    }
+    if (names.size === 0) {
+      toast('Plano e favoritos vazios — nada para enviar', 'warn')
+      return
+    }
+    ensureActiveList()
+    let added = 0
+    for (const name of names) {
+      if (addItemToActive({ name })) added += 1
+    }
+    toast(
+      added > 0
+        ? `${added} item${added === 1 ? '' : 's'} na lista de compras`
+        : 'Itens já estavam na lista',
+      'ok',
+    )
+  }
 
   const goalsBottleDisplay =
     goalsBottleDraft ?? String(state.waterServingMl)
@@ -544,43 +577,57 @@ export function NutricaoPage() {
           }
           panel={
             view === 'plan' ? (
-              <MealPlanEditor
-                days={mealPlan.days}
-                kcalGoal={state.kcalGoal}
-                proteinGoal={state.proteinGoal}
-                carbsGoal={state.carbsGoal}
-                fatGoal={state.fatGoal}
-                initialDay={todayWeekday === 0 ? 0 : todayWeekday}
-                onAddFromDb={openPlanSearch}
-                onAddCustom={(day, mealSlot, food, g) => {
-                  addPlanItem(day, mealSlot, food, g)
-                  toast(`${food.name} no plano`, 'ok')
-                }}
-                onUpdateItem={updatePlanItem}
-                onRemoveItem={(day, id) => {
-                  removePlanItem(day, id)
-                  toast('Item removido do plano', 'info')
-                }}
-                onCopyDay={(from, to) => {
-                  copyPlanDay(from, to)
-                  toast(
-                    to === 'weekdays'
-                      ? 'Copiado para dias úteis'
-                      : 'Dia copiado',
-                    'ok',
-                  )
-                }}
-                onCopyYesterday={(day) => {
-                  const ok = copyDiaryToPlanDay(day)
-                  toast(
-                    ok
-                      ? 'Diário de ontem aplicado a este dia'
-                      : 'Ontem sem registos no diário',
-                    ok ? 'ok' : 'warn',
-                  )
-                }}
-                createManualFood={createManualFood}
-              />
+              <div className="nutri-plan-wrap">
+                <div className="nutri-plan-shop">
+                  <Button
+                    variant="ghost"
+                    icon={<ShoppingCart size={16} />}
+                    onClick={generateShoppingFromPlan}
+                  >
+                    Gerar lista de compras
+                  </Button>
+                  <Link to="/compras" className="nutri-plan-shop__link">
+                    Abrir Compras
+                  </Link>
+                </div>
+                <MealPlanEditor
+                  days={mealPlan.days}
+                  kcalGoal={state.kcalGoal}
+                  proteinGoal={state.proteinGoal}
+                  carbsGoal={state.carbsGoal}
+                  fatGoal={state.fatGoal}
+                  initialDay={todayWeekday === 0 ? 0 : todayWeekday}
+                  onAddFromDb={openPlanSearch}
+                  onAddCustom={(day, mealSlot, food, g) => {
+                    addPlanItem(day, mealSlot, food, g)
+                    toast(`${food.name} no plano`, 'ok')
+                  }}
+                  onUpdateItem={updatePlanItem}
+                  onRemoveItem={(day, id) => {
+                    removePlanItem(day, id)
+                    toast('Item removido do plano', 'info')
+                  }}
+                  onCopyDay={(from, to) => {
+                    copyPlanDay(from, to)
+                    toast(
+                      to === 'weekdays'
+                        ? 'Copiado para dias úteis'
+                        : 'Dia copiado',
+                      'ok',
+                    )
+                  }}
+                  onCopyYesterday={(day) => {
+                    const ok = copyDiaryToPlanDay(day)
+                    toast(
+                      ok
+                        ? 'Diário de ontem aplicado a este dia'
+                        : 'Ontem sem registos no diário',
+                      ok ? 'ok' : 'warn',
+                    )
+                  }}
+                  createManualFood={createManualFood}
+                />
+              </div>
             ) : (
               <form
                 className="surface nutri-goals-panel"

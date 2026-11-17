@@ -45,6 +45,8 @@ export const emptySaudeState = (): SaudeState => ({
   sleepGoalWakeTime: '06:30',
   windDownEnabled: true,
   windDownMinutes: 45,
+  wakeSleepGateEnabled: false,
+  wakeSleepGateTime: '07:00',
   weeklyGoals: { waterDaysTarget: 5, sleepDaysTarget: 5 },
   metrics: [],
   sleep: [],
@@ -572,6 +574,7 @@ export type HealthInsight = {
   tone: 'ok' | 'warn' | 'info'
   title: string
   body: string
+  to?: string
 }
 
 export function buildHealthInsights(
@@ -588,6 +591,7 @@ export function buildHealthInsights(
         tone: 'warn',
         title: 'Hidratação',
         body: 'Ainda sem água registada. Uma garrafa agora muda o resto do dia.',
+        to: '/nutricao',
       })
     } else if (!v.waterOk) {
       list.push({
@@ -595,6 +599,7 @@ export function buildHealthInsights(
         tone: 'warn',
         title: 'Hidratação',
         body: `${pct}% da meta (${v.waterMl}/${v.waterGoalMl} ml). Fecha o dia com mais um gole.`,
+        to: '/nutricao',
       })
     } else {
       list.push({
@@ -602,6 +607,7 @@ export function buildHealthInsights(
         tone: 'ok',
         title: 'Hidratação',
         body: `Água no ponto (${v.waterMl} ml). ${v.waterWeekDays}/${v.weeklyGoals.waterDaysTarget} dias ok esta semana.`,
+        to: '/nutricao',
       })
     }
   }
@@ -612,6 +618,7 @@ export function buildHealthInsights(
       tone: 'warn',
       title: 'Débito de sono',
       body: `Levas ~${sleepDebt}h de débito na semana. Prioriza deitar mais cedo 2–3 noites.`,
+      to: '/saude',
     })
   } else if (v.sleepHours === null) {
     list.push({
@@ -619,6 +626,7 @@ export function buildHealthInsights(
       tone: 'info',
       title: 'Sono',
       body: 'Regista as horas — é o melhor predicador de energia e recuperação.',
+      to: '/saude',
     })
   } else if (!v.sleepOk) {
     list.push({
@@ -626,6 +634,7 @@ export function buildHealthInsights(
       tone: 'warn',
       title: 'Sono',
       body: `${v.sleepHours}h. O ideal fica entre 7 e 9. Hoje: volume de treino mais leve se fores treinar.`,
+      to: '/treino',
     })
   } else {
     list.push({
@@ -633,6 +642,7 @@ export function buildHealthInsights(
       tone: 'ok',
       title: 'Sono',
       body: `${v.sleepHours}h — recuperação boa. ${v.sleepWeekDays}/${v.weeklyGoals.sleepDaysTarget} noites ok na semana.`,
+      to: '/saude',
     })
   }
 
@@ -642,6 +652,7 @@ export function buildHealthInsights(
       tone: 'info',
       title: 'Movimento',
       body: 'Sem treino marcado. Uma caminhada ou o plano do dia já conta.',
+      to: '/treino',
     })
   } else {
     list.push({
@@ -649,6 +660,7 @@ export function buildHealthInsights(
       tone: 'ok',
       title: 'Movimento',
       body: 'Treino feito. Consistência > perfeição.',
+      to: '/treino',
     })
   }
 
@@ -658,6 +670,7 @@ export function buildHealthInsights(
       tone: 'info',
       title: 'Nutrição',
       body: 'Diário vazio. Proteína + água no mesmo cartão: abre Nutrição e regista o próximo prato.',
+      to: '/nutricao',
     })
   } else if (v.protein > 0 && v.protein < 80) {
     list.push({
@@ -665,6 +678,7 @@ export function buildHealthInsights(
       tone: 'warn',
       title: 'Nutrição',
       body: `${Math.round(v.protein)} g prot e ${v.waterMl} ml água. Sobe a proteína no próximo prato.`,
+      to: '/nutricao',
     })
   } else if (v.kcal > 0) {
     list.push({
@@ -672,6 +686,7 @@ export function buildHealthInsights(
       tone: 'ok',
       title: 'Nutrição',
       body: `${v.kcal} kcal · ${Math.round(v.protein)} g prot · ${v.waterMl} ml água — panorama do dia.`,
+      to: '/nutricao',
     })
   }
 
@@ -681,6 +696,7 @@ export function buildHealthInsights(
       tone: 'info',
       title: 'Hábitos de saúde',
       body: `${v.healthHabitsDone}/${v.healthHabitsTotal} hábitos de saúde feitos hoje.`,
+      to: '/habitos',
     })
   }
 
@@ -690,6 +706,7 @@ export function buildHealthInsights(
       tone: 'info',
       title: 'Check-in',
       body: 'Como estás? Energia e humor em 10 segundos.',
+      to: '/saude',
     })
   }
 

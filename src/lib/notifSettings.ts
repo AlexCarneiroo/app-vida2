@@ -15,6 +15,8 @@ export type NotifSettings = {
   compras: { on: boolean; time: string }
   sono: { on: boolean; time: string }
   resumo: { on: boolean; time: string }
+  /** Resumo semanal (weekday: 0=dom … 6=sáb) */
+  resumoSemanal: { on: boolean; time: string; weekday: number }
 }
 
 export type ReminderKind = keyof Omit<NotifSettings, 'enabled'>
@@ -38,6 +40,7 @@ export const DEFAULT_NOTIF_SETTINGS: NotifSettings = {
   compras: { on: true, time: '10:00' },
   sono: { on: false, time: '22:30' },
   resumo: { on: false, time: '21:00' },
+  resumoSemanal: { on: false, time: '20:00', weekday: 0 },
 }
 
 /** Quanto tempo depois da hora marcada ainda vale avisar. */
@@ -100,5 +103,17 @@ export function normalizeNotifSettings(raw: unknown): NotifSettings {
       on: bool(sub('resumo').on, d.resumo.on),
       time: cleanTime(sub('resumo').time, d.resumo.time),
     },
+    resumoSemanal: (() => {
+      const rs = sub('resumoSemanal')
+      const wd = Number(rs.weekday)
+      return {
+        on: bool(rs.on, d.resumoSemanal.on),
+        time: cleanTime(rs.time, d.resumoSemanal.time),
+        weekday:
+          Number.isInteger(wd) && wd >= 0 && wd <= 6
+            ? wd
+            : d.resumoSemanal.weekday,
+      }
+    })(),
   }
 }

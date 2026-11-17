@@ -101,12 +101,13 @@ export function wallClock(instant: Date, tz: string): Date {
 /** Que módulos de dados os lembretes ligados precisam de ler. */
 export function neededData(s: NotifSettings): DataName[] {
   const names = new Set<DataName>()
-  if (s.treino.on || s.resumo.on) names.add('treino')
-  if (s.agua.on || s.resumo.on) names.add('nutricao')
-  if (s.habitos.on || s.resumo.on) names.add('habitos')
-  if (s.contas.on) names.add('financas')
-  if (s.rotina.on) names.add('rotina')
-  if (s.compras.on) names.add('compras')
+  const weekly = Boolean(s.resumoSemanal?.on)
+  if (s.treino.on || s.resumo.on || weekly) names.add('treino')
+  if (s.agua.on || s.resumo.on || weekly) names.add('nutricao')
+  if (s.habitos.on || s.resumo.on || weekly) names.add('habitos')
+  if (s.contas.on || weekly) names.add('financas')
+  if (s.rotina.on || weekly) names.add('rotina')
+  if (s.compras.on || weekly) names.add('compras')
   return [...names]
 }
 

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { Button } from '../components/ui/Button'
 import { useConfirm, useToast } from '../components/ui/Feedback'
 import { PageHeader } from '../components/ui/PageShell'
@@ -522,7 +523,14 @@ export function ComprasPage() {
                       {list.totalSpent
                         ? ` · ${formatBRL(list.totalSpent)}`
                         : ` · est. ${formatBRL(estimatedListTotal(list))}`}
-                      {list.financeTxId ? ' · nas Finanças' : ''}
+                      {list.financeTxId ? (
+                        <>
+                          {' · '}
+                          <Link to="/financas">nas Finanças</Link>
+                        </>
+                      ) : (
+                        ''
+                      )}
                     </span>
                   </div>
                   <Button

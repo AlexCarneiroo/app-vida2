@@ -11,6 +11,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import {
   formatGoalProgress,
   HABIT_CATEGORY_LABELS,
@@ -1250,7 +1251,15 @@ function HabitRow({
       <span className="habit-info">
         <strong>{h.name}</strong>
         <span>
-          {habitMetaLine(h, linkedGoalName, financeGoalName)}
+          {habitMetaLine(h, linkedGoalName, null)}
+          {financeGoalName ? (
+            <>
+              {' · '}
+              <Link to="/financas" className="habit-finance-link">
+                💰 {financeGoalName}
+              </Link>
+            </>
+          ) : null}
           {h.goalKind !== 'count' || h.doneToday || h.skippedToday
             ? ` · ${status}`
             : ''}

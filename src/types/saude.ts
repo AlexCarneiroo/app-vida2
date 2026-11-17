@@ -149,6 +149,10 @@ export type SaudeState = {
   windDownEnabled: boolean
   /** Minutos antes da hora de deitar */
   windDownMinutes: number
+  /** Bloqueia a app após a hora até registar o sono */
+  wakeSleepGateEnabled: boolean
+  /** Hora a partir da qual o registo matinal é pedido */
+  wakeSleepGateTime: string
   weeklyGoals: WeeklyHealthGoals
   metrics: BodyMetric[]
   sleep: SleepEntry[]

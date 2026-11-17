@@ -1,5 +1,6 @@
 import { Droplets } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { waterServingSlots } from '../../data/nutricaoDefaults'
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
   onSetServings: (n: number) => void
   onSetServingMl: (ml: number) => void
   className?: string
+  to?: string
 }
 
 export function WaterTrackerCard({
@@ -18,6 +20,7 @@ export function WaterTrackerCard({
   onSetServings,
   onSetServingMl,
   className,
+  to,
 }: Props) {
   const [bottleDraft, setBottleDraft] = useState<string | null>(null)
   const bottleDisplay = bottleDraft ?? String(servingMl)
@@ -41,7 +44,13 @@ export function WaterTrackerCard({
     <section className={`surface nutri-water${className ? ` ${className}` : ''}`}>
       <div className="nutri-water__head">
         <Droplets size={16} />
-        <strong>Água</strong>
+        {to ? (
+          <Link to={to} className="nutri-water__title-link">
+            <strong>Água</strong>
+          </Link>
+        ) : (
+          <strong>Água</strong>
+        )}
         <span>
           {waterMl} / {waterGoalMl} ml
         </span>

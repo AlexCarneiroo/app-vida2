@@ -18,6 +18,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { lazy, Suspense, useMemo, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { ImportBankButton } from '../components/financas/ImportBankButton'
 import { Button } from '../components/ui/Button'
 import {
@@ -915,7 +916,9 @@ export function FinancasPage() {
                   </span>
                   {(habitsByGoal.get(goal.id)?.length ?? 0) > 0 && (
                     <em className="finance-goal__habits">
-                      Hábitos: {habitsByGoal.get(goal.id)!.join(' · ')}
+                      <Link to="/habitos">
+                        Hábitos: {habitsByGoal.get(goal.id)!.join(' · ')}
+                      </Link>
                     </em>
                   )}
                 </div>

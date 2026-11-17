@@ -11,6 +11,7 @@ import {
   Settings2,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { AgendaEventForm } from '../components/agenda/AgendaEventForm'
 import { AgendaIcon } from '../components/agenda/AgendaIcon'
 import {
@@ -633,9 +634,27 @@ export function AgendaPage() {
                   </>
                 )}
                 {activeItem.source !== 'event' && (
-                  <p className="page-sub">
-                    Este item vem de outro módulo e atualiza automaticamente.
-                  </p>
+                  <>
+                    <p className="page-sub">
+                      Este item vem de outro módulo e atualiza automaticamente.
+                    </p>
+                    <Link
+                      to={
+                        activeItem.source === 'treino'
+                          ? '/treino'
+                          : activeItem.source === 'habito'
+                            ? '/habitos'
+                            : '/rotina'
+                      }
+                      className="btn btn--primary"
+                    >
+                      {activeItem.source === 'treino'
+                        ? 'Abrir treino'
+                        : activeItem.source === 'habito'
+                          ? 'Abrir hábitos'
+                          : 'Abrir rotina'}
+                    </Link>
+                  </>
                 )}
               </div>
             </section>

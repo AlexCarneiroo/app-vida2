@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { Button } from '../ui/Button'
 import { staggerItem } from '../ui/PageTransition'
 import type { SleepQuality } from '../../types/saude'
@@ -130,17 +131,36 @@ export function Sparkline({
 export function InsightList({
   items,
 }: {
-  items: { id: string; tone: string; title: string; body: string }[]
+  items: {
+    id: string
+    tone: string
+    title: string
+    body: string
+    to?: string
+  }[]
 }) {
   if (items.length === 0) return null
   return (
     <ul className="saude-insights">
-      {items.map((ins) => (
-        <li key={ins.id} className={`saude-insight is-${ins.tone}`}>
-          <strong>{ins.title}</strong>
-          <p>{ins.body}</p>
-        </li>
-      ))}
+      {items.map((ins) => {
+        const inner = (
+          <>
+            <strong>{ins.title}</strong>
+            <p>{ins.body}</p>
+          </>
+        )
+        return (
+          <li key={ins.id} className={`saude-insight is-${ins.tone}`}>
+            {ins.to ? (
+              <Link to={ins.to} className="saude-insight__link">
+                {inner}
+              </Link>
+            ) : (
+              inner
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }

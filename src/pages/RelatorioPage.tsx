@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Activity,
+  CalendarDays,
   CalendarRange,
   Dumbbell,
   FileDown,
   Gamepad2,
   PiggyBank,
   Repeat,
+  ShoppingCart,
   Sparkles,
   UtensilsCrossed,
   type LucideIcon,
@@ -16,6 +18,8 @@ import { Button } from '../components/ui/Button'
 import { useToast } from '../components/ui/Feedback'
 import { PageTransition } from '../components/ui/PageTransition'
 import { useBusyAction } from '../hooks/useBusyAction'
+import { useAgenda } from '../hooks/useAgenda'
+import { useCompras } from '../hooks/useCompras'
 import { useFinancas } from '../hooks/useFinancas'
 import { useHabitos } from '../hooks/useHabitos'
 import { useJogos } from '../hooks/useJogos'
@@ -28,6 +32,7 @@ import { exportVidaReportPdf } from '../lib/vidaReportExport'
 import {
   REPORT_SECTION_ORDER,
   buildVidaReport,
+  crossModuleHighlights,
   rangeWindow,
   reportHighlights,
   type ReportRange,
@@ -49,6 +54,8 @@ const FILTERS: Array<{ id: ReportSectionId; label: string }> = [
   { id: 'nutricao', label: 'Nutrição' },
   { id: 'saude', label: 'Saúde' },
   { id: 'jogos', label: 'Jogos' },
+  { id: 'agenda', label: 'Agenda' },
+  { id: 'compras', label: 'Compras' },
 ]
 
 const ICONS: Record<ReportSectionId, LucideIcon> = {
@@ -59,12 +66,24 @@ const ICONS: Record<ReportSectionId, LucideIcon> = {
   nutricao: UtensilsCrossed,
   saude: Activity,
   jogos: Gamepad2,
+  agenda: CalendarDays,
+  compras: ShoppingCart,
+}
+
+function initialRange(param: string | null): ReportRange {
+  if (param === 'week' || param === 'month' || param === 'year' || param === 'custom') {
+    return param
+  }
+  return 'month'
 }
 
 export function RelatorioPage() {
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
   const { busy: exporting, run: runExport } = useBusyAction()
-  const [range, setRange] = useState<ReportRange>('month')
+  const [range, setRange] = useState<ReportRange>(() =>
+    initialRange(searchParams.get('range')),
+  )
   const [customStart, setCustomStart] = useState(() => rangeWindow('month').startKey)
   const [customEnd, setCustomEnd] = useState(() => dateKey())
   const [picked, setPicked] = useState<ReportSectionId[]>(REPORT_SECTION_ORDER)
@@ -76,6 +95,8 @@ export function RelatorioPage() {
   const { state: finance } = useFinancas()
   const { state: saude } = useSaude()
   const { state: jogos } = useJogos()
+  const { events: agendaEvents } = useAgenda()
+  const { state: compras } = useCompras()
 
   const window = useMemo(
     () =>
@@ -86,25 +107,28 @@ export function RelatorioPage() {
     [customEnd, customStart, range],
   )
 
-  const sections = useMemo(
-    () =>
-      buildVidaReport({
-        startKey: window.startKey,
-        endKey: window.endKey,
-        history: treino.history,
-        habits,
-        personalGoals,
-        habitsLog,
-        rotinaLog,
-        rotinaBlocks,
-        nutri,
-        transactions: finance.transactions,
-        goals: finance.goals ?? [],
-        bills: finance.bills ?? [],
-        saude,
-        gameSessions: jogos.sessions ?? [],
-      }),
+  const reportInput = useMemo(
+    () => ({
+      startKey: window.startKey,
+      endKey: window.endKey,
+      history: treino.history,
+      habits,
+      personalGoals,
+      habitsLog,
+      rotinaLog,
+      rotinaBlocks,
+      nutri,
+      transactions: finance.transactions,
+      goals: finance.goals ?? [],
+      bills: finance.bills ?? [],
+      saude,
+      gameSessions: jogos.sessions ?? [],
+      agendaEvents,
+      shoppingLists: compras.lists ?? [],
+    }),
     [
+      agendaEvents,
+      compras.lists,
       finance.bills,
       finance.goals,
       finance.transactions,
@@ -122,8 +146,14 @@ export function RelatorioPage() {
     ],
   )
 
+  const sections = useMemo(() => buildVidaReport(reportInput), [reportInput])
+
   const visible = sections.filter((section) => picked.includes(section.id))
   const highlights = reportHighlights(visible)
+  const crossLinks = useMemo(
+    () => crossModuleHighlights(visible, reportInput),
+    [reportInput, visible],
+  )
   const allOn = picked.length === REPORT_SECTION_ORDER.length
 
   function toggleSection(id: ReportSectionId) {
@@ -246,6 +276,22 @@ export function RelatorioPage() {
           <ul>
             {highlights.map((line) => (
               <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {crossLinks.length > 0 && (
+        <section className="surface report-highlights report-cross">
+          <p className="report-highlights__kicker">
+            <Sparkles size={14} aria-hidden />
+            Ligações da semana
+          </p>
+          <ul>
+            {crossLinks.map((item) => (
+              <li key={item.id}>
+                <Link to={item.to}>{item.text}</Link>
+              </li>
             ))}
           </ul>
         </section>

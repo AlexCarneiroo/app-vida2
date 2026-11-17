@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { ExercisePickerSheet } from '../components/treino/ExercisePickerSheet'
 import { HistoryList } from '../components/treino/HistoryList'
 import { InstructorEffortSheet } from '../components/treino/InstructorEffortSheet'
@@ -42,6 +43,7 @@ import { useBusyAction } from '../hooks/useBusyAction'
 import { getPresetById } from '../data/planPresets'
 import { DAY_LABELS, DAY_NAMES, clonePlan } from '../data/treinoDefaults'
 import { treinoDayLog } from '../lib/activityHeatmap'
+import { useSaude } from '../hooks/useSaude'
 import { useTreino } from '../hooks/useTreino'
 import { dateKey, weekDates } from '../lib/date'
 import {
@@ -113,6 +115,7 @@ export function TreinoPage() {
     updateSavedPlanFromCurrent,
     stats,
   } = useTreino()
+  const { poorSleepForTraining } = useSaude()
   const { toast } = useToast()
   const { confirm } = useConfirm()
   const { busy: completing, run: runComplete } = useBusyAction()
@@ -559,6 +562,17 @@ export function TreinoPage() {
           </button>
         )}
       </header>
+
+      {showHome && poorSleepForTraining && (
+        <Link to="/saude" className="surface treino-sleep-banner">
+          <Moon size={16} aria-hidden />
+          <div>
+            <strong>Sono fraco</strong>
+            <span>Considera treino leve ou reduzir carga hoje.</span>
+          </div>
+          <em>Ver sono</em>
+        </Link>
+      )}
 
       {showHome && (
         <>

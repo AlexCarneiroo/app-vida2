@@ -269,6 +269,8 @@ export function useSaude() {
       sleepGoalWakeTime?: string
       windDownEnabled?: boolean
       windDownMinutes?: number
+      wakeSleepGateEnabled?: boolean
+      wakeSleepGateTime?: string
       weeklyGoals?: Partial<WeeklyHealthGoals>
     }) => {
       update((prev) => ({
@@ -310,6 +312,14 @@ export function useSaude() {
           patch.windDownMinutes !== undefined
             ? Math.max(10, Math.min(180, Math.round(patch.windDownMinutes)))
             : prev.windDownMinutes,
+        wakeSleepGateEnabled:
+          patch.wakeSleepGateEnabled !== undefined
+            ? patch.wakeSleepGateEnabled
+            : prev.wakeSleepGateEnabled,
+        wakeSleepGateTime:
+          patch.wakeSleepGateTime !== undefined
+            ? patch.wakeSleepGateTime
+            : prev.wakeSleepGateTime,
         weeklyGoals: patch.weeklyGoals
           ? {
               waterDaysTarget: Math.max(

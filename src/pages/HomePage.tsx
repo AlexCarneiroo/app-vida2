@@ -17,6 +17,7 @@ import { PageTransition } from '../components/ui/PageTransition'
 import { ProgressRing } from '../components/ui/ProgressRing'
 import { ActivityHeatmap } from '../components/ui/ActivityHeatmap'
 import { DailyCoachCard } from '../components/insights/DailyCoachCard'
+import { WeeklyDigestCard } from '../components/insights/WeeklyDigestCard'
 import { WaterTrackerCard } from '../components/nutricao/WaterTrackerCard'
 import { useAuth } from '../hooks/useAuth'
 import { useFinancas } from '../hooks/useFinancas'
@@ -39,6 +40,12 @@ import {
 import { daysUntilBill } from '../lib/billStatus'
 import { buildDailyCoach } from '../lib/dailyCoach'
 import { dateKey, formatBRL, weekDates } from '../lib/date'
+import {
+  buildVidaReport,
+  crossModuleHighlights,
+  rangeWindow,
+  reportHighlights,
+} from '../lib/vidaReport'
 
 /** Bom dia 5–11 · Boa tarde 12–17 · Boa noite 18–4 */
 function greetingForHour(hour: number) {
@@ -66,6 +73,8 @@ export function HomePage() {
     total: habitsTotal,
     toggleHabit,
     dayLog: habitsLog,
+    habits,
+    personalGoals,
   } = useHabitos()
   const {
     blocks,
@@ -99,12 +108,18 @@ export function HomePage() {
     state: saudeState,
     today: saudeToday,
     todayCheckIn,
+    poorSleepForTraining,
   } = useSaude()
-  const { playsToday: jogosPlaysToday, streak: jogosStreak } = useJogos()
+  const {
+    playsToday: jogosPlaysToday,
+    streak: jogosStreak,
+    state: jogosState,
+  } = useJogos()
   const {
     pending: comprasPending,
     needed: comprasNeeded,
     activeList: comprasActive,
+    state: comprasState,
   } = useCompras()
   const nutriLog = nutriState.dayLog ?? {}
   const goals = financeState.goals
@@ -452,12 +467,57 @@ export function HomePage() {
     saudeToday,
   ])
 
+  const weeklyDigest = useMemo(() => {
+    const win = rangeWindow('week', now)
+    const input = {
+      startKey: win.startKey,
+      endKey: win.endKey,
+      history: state.history,
+      habits,
+      personalGoals,
+      habitsLog,
+      rotinaLog,
+      rotinaBlocks: rotinaTotal,
+      nutri: nutriState,
+      transactions: financeState.transactions,
+      goals: financeState.goals ?? [],
+      bills: financeState.bills ?? [],
+      saude: saudeState,
+      gameSessions: jogosState.sessions ?? [],
+      agendaEvents,
+      shoppingLists: comprasState.lists ?? [],
+    }
+    const sections = buildVidaReport(input)
+    return {
+      label: win.label,
+      highlights: reportHighlights(sections),
+      crossLinks: crossModuleHighlights(sections, input),
+    }
+  }, [
+    agendaEvents,
+    comprasState.lists,
+    financeState.bills,
+    financeState.goals,
+    financeState.transactions,
+    habits,
+    habitsLog,
+    jogosState.sessions,
+    now,
+    nutriState,
+    personalGoals,
+    rotinaLog,
+    rotinaTotal,
+    saudeState,
+    state.history,
+  ])
+
   const dailyCoach = useMemo(
     () =>
       buildDailyCoach({
         hour: now.getHours(),
         sleepHours: saudeSignals.sleepHours,
         sleepDebtHours: sleepDebt,
+        poorSleepForTraining,
         waterMl: saudeSignals.waterMl,
         waterGoalMl: saudeSignals.waterGoalMl,
         kcal: todayMacros.kcal,
@@ -472,16 +532,23 @@ export function HomePage() {
         pendingHabits: dueToday.filter(
           (habit) => !habit.doneToday && !habit.skippedToday,
         ).length,
+        pendingCompras: comprasPending + comprasNeeded.length,
+        billsDue: (billsOverdue?.length ?? 0) + (billsDueSoonAlert?.length ?? 0),
       }),
     [
       now,
       saudeSignals,
       sleepDebt,
+      poorSleepForTraining,
       todayMacros,
       nutriState.kcalGoal,
       nutriState.proteinGoal,
       todayCheckIn,
       todayTemplate,
+      comprasPending,
+      comprasNeeded.length,
+      billsOverdue,
+      billsDueSoonAlert,
       isTodayDone,
       state.active,
       dueToday,
@@ -612,6 +679,12 @@ export function HomePage() {
 
       <DailyCoachCard report={dailyCoach} />
 
+      <WeeklyDigestCard
+        label={weeklyDigest.label}
+        highlights={weeklyDigest.highlights}
+        crossLinks={weeklyDigest.crossLinks}
+      />
+
       <WaterTrackerCard
         className="home-water"
         waterMl={water}
@@ -619,6 +692,7 @@ export function HomePage() {
         servingMl={nutriState.waterServingMl}
         onSetServings={setWaterServings}
         onSetServingMl={(ml) => setGoals({ waterServingMl: ml })}
+        to="/nutricao"
       />
 
       {notices.length > 0 && (
@@ -730,25 +804,34 @@ export function HomePage() {
           </div>
           <div className="surface habit-list">
             {todayItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="habit-row"
-                onClick={item.onToggle}
-              >
-                <span className={`habit-check${item.done ? ' is-done' : ''}`}>
+              <div key={item.id} className="habit-row home-today-row">
+                <button
+                  type="button"
+                  className={`habit-check${item.done ? ' is-done' : ''}`}
+                  onClick={item.onToggle}
+                  aria-label={
+                    item.done ? `Desmarcar ${item.title}` : `Concluir ${item.title}`
+                  }
+                >
                   {item.done && <Check size={16} strokeWidth={3} />}
-                </span>
-                <span className="habit-info">
+                </button>
+                <button
+                  type="button"
+                  className="habit-info home-today-row__main"
+                  onClick={item.onToggle}
+                >
                   <strong>{item.title}</strong>
                   <span>{item.detail}</span>
-                </span>
-                {item.kind === 'habit' && item.streak != null ? (
-                  <span className="streak">{item.streak}d</span>
-                ) : (
-                  <span className="streak">rotina</span>
-                )}
-              </button>
+                </button>
+                <Link
+                  to={item.kind === 'habit' ? '/habitos' : '/rotina'}
+                  className="streak home-today-row__link"
+                >
+                  {item.kind === 'habit' && item.streak != null
+                    ? `${item.streak}d`
+                    : 'rotina'}
+                </Link>
+              </div>
             ))}
           </div>
         </>

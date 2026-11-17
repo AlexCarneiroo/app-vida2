@@ -1435,6 +1435,11 @@ export function normalizeSaude(raw: unknown): SaudeState {
       10,
       Math.min(180, Math.round(Number(parsed.windDownMinutes) || 45)),
     ),
+    wakeSleepGateEnabled: Boolean(parsed.wakeSleepGateEnabled),
+    wakeSleepGateTime:
+      asTimeOrNull(parsed.wakeSleepGateTime) ||
+      sleepGoalWakeTime ||
+      '07:00',
     weeklyGoals: defaultWeeklyGoals(parsed.weeklyGoals),
     metrics: asArray<BodyMetric>(parsed.metrics)
       .map(normalizeMetric)
@@ -1537,6 +1542,12 @@ export function mergeSaudeSafe(
       profile.sleepGoalWakeTime || local.sleepGoalWakeTime || '06:30',
     windDownEnabled: profile.windDownEnabled,
     windDownMinutes: profile.windDownMinutes || local.windDownMinutes || 45,
+    wakeSleepGateEnabled: profile.wakeSleepGateEnabled,
+    wakeSleepGateTime:
+      profile.wakeSleepGateTime ||
+      local.wakeSleepGateTime ||
+      remote.wakeSleepGateTime ||
+      '07:00',
     weeklyGoals: defaultWeeklyGoals(profile.weeklyGoals),
     metrics: mergeById(local.metrics, remote.metrics, preferRemote),
     sleep: mergeSleepLists(local.sleep, remote.sleep, preferRemote),
