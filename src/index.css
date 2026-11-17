@@ -12117,7 +12117,7 @@ button.activity-map__cell:focus-visible {
   }
 }
 
-/* —— Compras —— */
+/* ---- Compras ---- */
 .compras-panel {
   display: flex;
   flex-direction: column;
