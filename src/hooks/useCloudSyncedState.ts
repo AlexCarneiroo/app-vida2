@@ -35,6 +35,14 @@ type Options<T extends AppModuleState> = {
   isEmpty: (data: T) => boolean
 }
 
+function announceModuleWrite(storageKey: string, updatedAt: number) {
+  window.dispatchEvent(
+    new CustomEvent('vida:module-external', {
+      detail: { storageKey, updatedAt },
+    }),
+  )
+}
+
 export function useCloudSyncedState<T extends AppModuleState>({
   collection,
   storageKey,
@@ -45,6 +53,7 @@ export function useCloudSyncedState<T extends AppModuleState>({
   const [state, setState] = useState<T>(() => load().data)
   const hydratedRef = useRef(false)
   const hydratingRef = useRef(false)
+  const skipPersistRef = useRef(false)
   const stateRef = useRef(state)
   const updatedAtRef = useRef(load().updatedAt)
   stateRef.current = state
@@ -68,6 +77,7 @@ export function useCloudSyncedState<T extends AppModuleState>({
       }
 
       if (cancelled) return
+      skipPersistRef.current = true
       setState(finalDoc.data)
       updatedAtRef.current = finalDoc.updatedAt
       touchPersisted(storageKey, finalDoc.data, finalDoc.updatedAt)
@@ -84,20 +94,36 @@ export function useCloudSyncedState<T extends AppModuleState>({
   }, [uid, authReady, collection, storageKey, load, isEmpty])
 
   useEffect(() => {
-    // Sempre grava local com timestamp novo — offline-first
+    // Outra instância do mesmo hook (ex.: Home + useSaude) já gravou mais
+    // recente — adota e não volta a escrever um snapshot velho.
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false
+      return
+    }
+    const disk = load()
+    if (disk.updatedAt > updatedAtRef.current) {
+      skipPersistRef.current = true
+      updatedAtRef.current = disk.updatedAt
+      setState(disk.data)
+      return
+    }
+
     const at = Date.now()
     updatedAtRef.current = at
     touchPersisted(storageKey, state, at)
+    announceModuleWrite(storageKey, at)
     // Durante o hydrate inicial, não sobe para a nuvem (evita corrida),
     // mas o localStorage fica sempre atualizado para os lembretes lerem.
     if (hydratedRef.current && !hydratingRef.current) {
-      // Debounce curto: lembretes (água, hábitos, resumo…) leem a nuvem.
       scheduleCloudSave(collection, state, at, 280)
     }
-  }, [state, collection, storageKey])
+  }, [state, collection, storageKey, load])
 
   useEffect(() => {
     const flush = () => {
+      const disk = load()
+      // Não sobrescrever água/hábitos gravados por outra instância.
+      if (disk.updatedAt > updatedAtRef.current) return
       const at = updatedAtRef.current || Date.now()
       touchPersisted(storageKey, stateRef.current, at)
       if (!hydratedRef.current) return
@@ -112,15 +138,17 @@ export function useCloudSyncedState<T extends AppModuleState>({
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('online', onOnline)
     }
-  }, [collection, storageKey])
+  }, [collection, storageKey, load])
 
   useEffect(() => {
     const onExternal = (event: Event) => {
       const detail = (event as CustomEvent<{ storageKey?: string }>).detail
       if (detail?.storageKey !== storageKey) return
       const doc = load()
+      // `<=`: evita eco da própria gravação (announceModuleWrite).
       if (doc.updatedAt <= updatedAtRef.current) return
       updatedAtRef.current = doc.updatedAt
+      skipPersistRef.current = true
       setState(doc.data)
     }
     window.addEventListener('vida:module-external', onExternal)

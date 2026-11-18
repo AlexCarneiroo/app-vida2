@@ -107,7 +107,21 @@ function dueAgua(ctx: ReminderContext, c: Clock): DueReminder[] {
       ? state.waterByDay
       : {}
   const drank = Math.max(0, Number(byDay[c.today]) || 0)
-  if (goal <= 0 || drank >= goal) return []
+  if (goal <= 0) return []
+
+  // Continua a emitir o cartão mesmo com meta feita, para atualizar o texto
+  // antigo “ainda sem registo” na central.
+  if (drank >= goal) {
+    return [
+      {
+        id: `agua:${c.today}:${slot}`,
+        tag: 'agua',
+        title: 'Água ✓',
+        body: `Meta feita · ${fmtLiters(drank)} / ${fmtLiters(goal)}`,
+        url: '/nutricao',
+      },
+    ]
+  }
 
   const left = goal - drank
   const pct = Math.round((drank / goal) * 100)

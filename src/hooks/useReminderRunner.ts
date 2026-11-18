@@ -120,21 +120,37 @@ export function useReminderRunner() {
 
     tick()
     const timer = window.setInterval(tick, TICK_MS)
+    let debounce: number | undefined
+    const tickSoon = () => {
+      window.clearTimeout(debounce)
+      debounce = window.setTimeout(tick, 120)
+    }
     const onVisible = () => {
       if (document.visibilityState === 'visible') tick()
     }
     const onStorage = (e: StorageEvent) => {
       if (!e.key) return
-      if (Object.values(STORAGE_KEYS).includes(e.key)) tick()
+      if (Object.values(STORAGE_KEYS).includes(e.key)) tickSoon()
+    }
+    const onModule = (event: Event) => {
+      const key = (event as CustomEvent<{ storageKey?: string }>).detail
+        ?.storageKey
+      if (!key || !Object.values(STORAGE_KEYS).includes(key)) return
+      tickSoon()
     }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', tick)
     window.addEventListener('storage', onStorage)
+    window.addEventListener('vida:module-external', onModule)
+    window.addEventListener('vida:reminders-refresh', tickSoon)
     return () => {
       window.clearInterval(timer)
+      window.clearTimeout(debounce)
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', tick)
       window.removeEventListener('storage', onStorage)
+      window.removeEventListener('vida:module-external', onModule)
+      window.removeEventListener('vida:reminders-refresh', tickSoon)
     }
   }, [settings, pushActive])
 

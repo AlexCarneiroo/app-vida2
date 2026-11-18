@@ -1,10 +1,11 @@
 import { Moon, Settings } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   emptySleepHabits,
   sleepHoursBetween,
 } from '../../data/saudeDefaults'
+import { dateKey } from '../../lib/date'
 import {
   readSaudeState,
   shouldForceWakeSleepLog,
@@ -21,6 +22,9 @@ export function ForceSleepLogGate() {
   const { toast } = useToast()
   const [tick, setTick] = useState(0)
   const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  /** Depois de guardar com sucesso, não reabrir o gate neste dia. */
+  const dismissedDayRef = useRef<string | null>(null)
 
   const snapshot = useMemo(() => readSaudeState(), [tick, location.pathname])
   const onConfig = location.pathname.startsWith('/config')
@@ -40,6 +44,11 @@ export function ForceSleepLogGate() {
 
   useEffect(() => {
     if (onConfig) {
+      setOpen(false)
+      return
+    }
+    const today = dateKey()
+    if (dismissedDayRef.current === today) {
       setOpen(false)
       return
     }
@@ -69,7 +78,13 @@ export function ForceSleepLogGate() {
     setHours(String(sleepHoursBetween(bed, wake) ?? 7.5))
     setQuality(3)
     setReadiness(3)
-  }, [open, snapshot.sleepGoalBedTime, snapshot.sleepReminderTime, snapshot.sleepGoalWakeTime, snapshot.wakeSleepGateTime])
+  }, [
+    open,
+    snapshot.sleepGoalBedTime,
+    snapshot.sleepReminderTime,
+    snapshot.sleepGoalWakeTime,
+    snapshot.wakeSleepGateTime,
+  ])
 
   if (!open || onConfig) return null
 
@@ -86,23 +101,42 @@ export function ForceSleepLogGate() {
       toast('Ajusta a linha do tempo do sono', 'warn')
       return
     }
-    upsertSleepLocal({
-      hours: h,
-      quality,
-      readiness,
-      bedTime,
-      wakeTime,
-      latencyMin: 0,
-      awakenings: 0,
-      habits: emptySleepHabits(),
-    })
-    toast('Sono registado — bom dia', 'ok')
+    if (saving) return
+    setSaving(true)
+    // Marca o dia e fecha antes do patch: o evento vida:module-external
+    // dispara no meio do upsert e não pode reabrir o gate.
+    const today = dateKey()
+    dismissedDayRef.current = today
     setOpen(false)
-    setTick((n) => n + 1)
+    try {
+      upsertSleepLocal({
+        hours: h,
+        quality,
+        readiness,
+        bedTime,
+        wakeTime,
+        latencyMin: 0,
+        awakenings: 0,
+        habits: emptySleepHabits(),
+      })
+      toast('Sono registado — bom dia', 'ok')
+      setTick((n) => n + 1)
+    } catch {
+      dismissedDayRef.current = null
+      setOpen(true)
+      toast('Não foi possível guardar. Tenta de novo.', 'warn')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <div className="sleep-gate" role="dialog" aria-modal="true" aria-labelledby="sleep-gate-title">
+    <div
+      className="sleep-gate"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sleep-gate-title"
+    >
       <div className="sleep-gate__backdrop" aria-hidden />
       <div className="sleep-gate__card surface">
         <div className="sleep-gate__head">
@@ -139,7 +173,7 @@ export function ForceSleepLogGate() {
         />
 
         <div className="sleep-gate__actions">
-          <Button variant="primary" onClick={save}>
+          <Button variant="primary" onClick={save} loading={saving}>
             Guardar e continuar
           </Button>
           <Link to="/config" className="sleep-gate__config">

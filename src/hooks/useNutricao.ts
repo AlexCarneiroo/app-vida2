@@ -165,6 +165,11 @@ export function useNutricao() {
     const at = Date.now()
     touchPersisted(STORAGE_KEY, state, at)
     void flushCloudSave('nutricao', state, at)
+    window.dispatchEvent(
+      new CustomEvent('vida:module-external', {
+        detail: { storageKey: STORAGE_KEY, updatedAt: at },
+      }),
+    )
   }, [])
 
   /** Define ml totais do dia (0 = limpar). */

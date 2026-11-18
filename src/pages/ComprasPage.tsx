@@ -281,15 +281,18 @@ export function ComprasPage() {
                     : 'Meter tudo na lista'}
                 </Button>
               </div>
-              <ul className="surface compras-list">
+              <ul className="compras-list">
                 {needed.map((item) => {
                   const on = selectedNeeded.includes(item.id)
                   return (
-                    <li key={item.id} className="compras-row">
+                    <li key={item.id} className="surface compras-row compras-row--simple">
                       <button
                         type="button"
-                        className={`habit-check${on ? ' is-done' : ''}`}
+                        className={`compras-check${on ? ' is-done' : ''}`}
                         aria-pressed={on}
+                        aria-label={
+                          on ? `Desmarcar ${item.name}` : `Selecionar ${item.name}`
+                        }
                         onClick={() =>
                           setSelectedNeeded((prev) =>
                             on
@@ -300,13 +303,13 @@ export function ComprasPage() {
                       >
                         {on && <Check size={16} strokeWidth={3} />}
                       </button>
-                      <div className="compras-row__body">
+                      <div className="compras-row__title">
                         <strong>{item.name}</strong>
                         {item.note ? <span>{item.note}</span> : null}
                       </div>
                       <button
                         type="button"
-                        className="icon-btn"
+                        className="compras-row__trash"
                         aria-label="Remover"
                         onClick={() => removeNeeded(item.id)}
                       >

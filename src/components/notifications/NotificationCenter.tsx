@@ -30,6 +30,8 @@ export function NotificationCenter() {
     if (!open) return
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    // Releitura imediata (água, hábitos, treino…) ao abrir a central.
+    window.dispatchEvent(new Event('vida:reminders-refresh'))
     return () => {
       document.body.style.overflow = previous
     }

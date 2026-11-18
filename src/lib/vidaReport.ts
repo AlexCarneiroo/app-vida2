@@ -817,7 +817,7 @@ export function crossModuleHighlights(
   } else if (avgSleep > 0 && avgSleep < 6.5) {
     out.push({
       id: 'sleep-low',
-      text: `Sono médio de ${avgSleep.toFixed(1).replace('.', ',')} h — prioriza recuperação.`,
+      text: 'Sono abaixo do ideal — prioriza recuperação.',
       to: '/saude',
     })
   }

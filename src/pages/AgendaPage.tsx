@@ -182,7 +182,20 @@ export function AgendaPage() {
     return map
   }, [items])
 
+  /** No calendário (mês) só marcam prioridade alta. */
+  const calendarItemsByDay = useMemo(() => {
+    const map = new Map<string, AgendaItem[]>()
+    for (const item of items) {
+      if (item.priority !== 'alta') continue
+      const list = map.get(item.dateKey) ?? []
+      list.push(item)
+      map.set(item.dateKey, list)
+    }
+    return map
+  }, [items])
+
   const selectedItems = itemsByDay.get(selectedKey) ?? []
+  const calendarSelectedItems = calendarItemsByDay.get(selectedKey) ?? []
   const dayConflicts = useMemo(
     () => findConflicts(selectedItems),
     [selectedItems],
@@ -444,7 +457,7 @@ export function AgendaPage() {
                 {view === 'month' && (
                   <AgendaMonthView
                     anchor={anchor}
-                    itemsByDay={itemsByDay}
+                    itemsByDay={calendarItemsByDay}
                     selectedKey={selectedKey}
                     todayKey={todayKey}
                     onSelectDay={(key) => {
@@ -481,11 +494,11 @@ export function AgendaPage() {
               </motion.div>
             </AnimatePresence>
 
-            {view === 'month' && selectedItems.length > 0 && (
+            {view === 'month' && calendarSelectedItems.length > 0 && (
               <section className="surface agenda-day-preview">
                 <header>
                   <div>
-                    <p className="page-kicker">Pré-visualização</p>
+                    <p className="page-kicker">Pré-visualização · alta</p>
                     <h2>{formatDateBR(selectedKey)}</h2>
                   </div>
                   <Button
@@ -499,7 +512,7 @@ export function AgendaPage() {
                   </Button>
                 </header>
                 <AgendaListView
-                  items={selectedItems}
+                  items={calendarSelectedItems}
                   onSelectItem={openDetail}
                 />
               </section>
